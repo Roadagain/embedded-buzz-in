@@ -19,11 +19,11 @@
 
 ### 書き込み
 
-Arduino IDE で `firmware/buzz_in/buzz_in.ino` を開き、ESP32 Arduino コアの **ESP32 Dev Module** と親機のシリアルポートを選びます。Arduino CLI でも実行できます。`PORT` は `arduino-cli board list` で確認したポートに置き換えてください。
+Arduino IDE で `firmware/firmware.ino` を開き、ESP32 Arduino コアの **ESP32 Dev Module** と親機のシリアルポートを選びます。Arduino CLI でも実行できます。`PORT` は `arduino-cli board list` で確認したポートに置き換えてください。
 
 ```sh
-arduino-cli compile --fqbn esp32:esp32:esp32 firmware/buzz_in
-arduino-cli upload --fqbn esp32:esp32:esp32 --port PORT firmware/buzz_in
+arduino-cli compile --fqbn esp32:esp32:esp32 firmware
+arduino-cli upload --fqbn esp32:esp32:esp32 --port PORT firmware
 ```
 
 ### 実機での確認
