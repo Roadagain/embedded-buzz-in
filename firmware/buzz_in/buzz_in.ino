@@ -1,7 +1,8 @@
 #include <Arduino.h>
 
-constexpr uint32_t DEBOUNCE_MS = 20;
 constexpr uint32_t BLINK_HALF_PERIOD_MS = 250;
+
+portMUX_TYPE buttonMux = portMUX_INITIALIZER_UNLOCKED;
 
 class Button {
 public:
@@ -9,33 +10,25 @@ public:
 
     void begin() {
         pinMode(pin_, INPUT_PULLUP);
-        rawPressed_ = pressed_ = (digitalRead(pin_) == LOW);
+        attachInterruptArg(pin_, onFalling, this, FALLING);
     }
 
-    bool update(uint32_t now) {
-        const bool rawPressed = digitalRead(pin_) == LOW;
-        if (rawPressed != rawPressed_) {
-            rawPressed_ = rawPressed;
-            changedAt_ = now;
-        }
-
-        if (rawPressed_ == pressed_ || now - changedAt_ < DEBOUNCE_MS) {
-            return false;
-        }
-
-        pressed_ = rawPressed_;
-        return pressed_;
-    }
-
-    bool isPressed() const {
-        return pressed_;
+    bool takePress() {
+        const bool pressed = pendingPress_;
+        pendingPress_ = false;
+        return pressed;
     }
 
 private:
+    static void ARDUINO_ISR_ATTR onFalling(void* context) {
+        auto& button = *static_cast<Button*>(context);
+        portENTER_CRITICAL_ISR(&buttonMux);
+        button.pendingPress_ = true;
+        portEXIT_CRITICAL_ISR(&buttonMux);
+    }
+
     const uint8_t pin_;
-    bool rawPressed_ = false;
-    bool pressed_ = false;
-    uint32_t changedAt_ = 0;
+    bool pendingPress_ = false;
 };
 
 Button childOne(16);
@@ -82,18 +75,20 @@ void setup() {
 }
 
 void loop() {
-    const uint32_t now = millis();
-    const bool resetWasPressed = resetButton.isPressed();
-    const bool resetPressed = resetButton.update(now);
-    const bool onePressed = childOne.update(now);
-    const bool twoPressed = childTwo.update(now);
+    // 割り込みと競合しないように、3ボタンの入力をまとめて取り出す。
+    portENTER_CRITICAL(&buttonMux);
+    const bool resetPressed = resetButton.takePress();
+    const bool onePressed = childOne.takePress();
+    const bool twoPressed = childTwo.takePress();
+    portEXIT_CRITICAL(&buttonMux);
 
+    const uint32_t now = millis();
     if (resetPressed) {
         first = Child::None;
         second = Child::None;
         Serial.println("RESET");
-    } else if (!resetWasPressed) {
-        // 同じ読み取り周期で両方の押下が確定した場合は、子機1を1着とする。
+    } else {
+        // 同じループで両方の押下を受け取った場合は、子機1を先に扱う。
         if (onePressed) {
             recordPress(Child::One, now);
         }
