@@ -45,19 +45,26 @@ Button resetButton(15);
 constexpr uint8_t LED_ONE = 22;
 constexpr uint8_t LED_TWO = 23;
 
-enum class Child { None, One, Two };
+enum class Child { None = 0, One = 1, Two = 2 };
 
 Child first = Child::None;
 Child second = Child::None;
 uint32_t firstPressedAt = 0;
 
 void recordPress(Child child, uint32_t now) {
+    unsigned rank;
     if (first == Child::None) {
         first = child;
         firstPressedAt = now;
+        rank = 1;
     } else if (first != child && second == Child::None) {
         second = child;
+        rank = 2;
+    } else {
+        return;
     }
+
+    Serial.printf("PRESS child=%u rank=%u\n", static_cast<unsigned>(child), rank);
 }
 
 void setup() {
@@ -69,6 +76,9 @@ void setup() {
     pinMode(LED_TWO, OUTPUT);
     digitalWrite(LED_ONE, LOW);
     digitalWrite(LED_TWO, LOW);
+
+    Serial.begin(115200);
+    Serial.println("BOOT");
 }
 
 void loop() {
@@ -81,6 +91,7 @@ void loop() {
     if (resetPressed) {
         first = Child::None;
         second = Child::None;
+        Serial.println("RESET");
     } else if (!resetWasPressed) {
         // 同じ読み取り周期で両方の押下が確定した場合は、子機1を1着とする。
         if (onePressed) {
