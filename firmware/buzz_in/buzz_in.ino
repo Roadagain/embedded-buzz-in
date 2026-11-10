@@ -65,12 +65,12 @@ private:
     uint32_t fellAt_ = 0;
 };
 
-Button childOne(16);
+Button childOne(22);
 Button childTwo(18);
 ResetButton resetButton(15);
 
-constexpr uint8_t LED_ONE = 22;
-constexpr uint8_t LED_TWO = 23;
+constexpr uint8_t LED_ONE = 23;
+constexpr uint8_t LED_TWO = 16;
 
 enum class Child { None = 0, One = 1, Two = 2 };
 
