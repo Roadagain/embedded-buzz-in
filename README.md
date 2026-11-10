@@ -11,11 +11,11 @@
 
 | TRS端子 | 親機・子機1ポート | 親機・子機2ポート | 各子機側 |
 | --- | --- | --- | --- |
-| Tip（先端） | GPIO25 | GPIO26 | スイッチの片端 |
+| Tip（先端） | GPIO16 | GPIO18 | スイッチの片端 |
 | Ring（中央） | GPIO22 → 330 Ω抵抗 | GPIO23 → 330 Ω抵抗 | LEDのアノード |
 | Sleeve（根元） | GND | GND | スイッチのもう片端とLEDのカソード |
 
-330 Ω抵抗は、親機側でGPIOとRingの間にポートごとに1本入れます。親機のリセットボタンは常開スイッチを GPIO27 と GND の間に接続します。スイッチ入力には ESP32 の内部プルアップを使用します。ピンの位置は [ESP32-DevKitC V4 のピン配置](https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32/esp32-devkitc/user_guide.html) を参照してください。
+330 Ω抵抗は、親機側でGPIOとRingの間にポートごとに1本入れます。親機のリセットボタンは常開スイッチを GPIO15 と GND の間に接続します。スイッチ入力には ESP32 の内部プルアップを使用します。ピンの位置は [ESP32-DevKitC V4 のピン配置](https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32/esp32-devkitc/user_guide.html) を参照してください。
 
 ### 書き込み
 

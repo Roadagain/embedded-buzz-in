@@ -38,9 +38,9 @@ private:
     uint32_t changedAt_ = 0;
 };
 
-Button childOne(25);
-Button childTwo(26);
-Button resetButton(27);
+Button childOne(16);
+Button childTwo(18);
+Button resetButton(15);
 
 constexpr uint8_t LED_ONE = 22;
 constexpr uint8_t LED_TWO = 23;
