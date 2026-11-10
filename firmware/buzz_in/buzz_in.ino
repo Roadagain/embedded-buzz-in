@@ -31,9 +31,43 @@ private:
     bool pendingPress_ = false;
 };
 
+class ResetButton {
+public:
+    explicit ResetButton(uint8_t pin) : pin_(pin) {}
+
+    void begin() {
+        pinMode(pin_, INPUT_PULLUP);
+        attachInterruptArg(pin_, onFalling, this, FALLING);
+    }
+
+    bool takePress() {
+        if (!pendingPress_ || static_cast<uint32_t>(millis()) - fellAt_ < DEBOUNCE_MS) {
+            return false;
+        }
+
+        pendingPress_ = false;
+        return digitalRead(pin_) == LOW;
+    }
+
+private:
+    static constexpr uint32_t DEBOUNCE_MS = 20;
+
+    static void ARDUINO_ISR_ATTR onFalling(void* context) {
+        auto& button = *static_cast<ResetButton*>(context);
+        portENTER_CRITICAL_ISR(&buttonMux);
+        button.pendingPress_ = true;
+        button.fellAt_ = millis();
+        portEXIT_CRITICAL_ISR(&buttonMux);
+    }
+
+    const uint8_t pin_;
+    bool pendingPress_ = false;
+    uint32_t fellAt_ = 0;
+};
+
 Button childOne(16);
 Button childTwo(18);
-Button resetButton(15);
+ResetButton resetButton(15);
 
 constexpr uint8_t LED_ONE = 22;
 constexpr uint8_t LED_TWO = 23;
