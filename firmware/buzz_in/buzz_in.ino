@@ -4,31 +4,39 @@ constexpr uint32_t BLINK_HALF_PERIOD_MS = 250;
 
 portMUX_TYPE buttonMux = portMUX_INITIALIZER_UNLOCKED;
 
+enum class Child : uint8_t { None = 0, One = 1, Two = 2 };
+
+constexpr uint8_t CHILD_COUNT = 2;
+
+struct Ranking {
+    Child order[CHILD_COUNT]{};
+    uint8_t count = 0;
+};
+
+Ranking ranking;
+
 class Button {
 public:
-    explicit Button(uint8_t pin) : pin_(pin) {}
+    Button(uint8_t pin, Child child) : pin_(pin), child_(child) {}
 
     void begin() {
         pinMode(pin_, INPUT_PULLUP);
         attachInterruptArg(pin_, onFalling, this, FALLING);
     }
 
-    bool takePress() {
-        const bool pressed = pendingPress_;
-        pendingPress_ = false;
-        return pressed;
-    }
-
 private:
     static void ARDUINO_ISR_ATTR onFalling(void* context) {
         auto& button = *static_cast<Button*>(context);
         portENTER_CRITICAL_ISR(&buttonMux);
-        button.pendingPress_ = true;
+        // 空きがある間は、先頭の子機と異なる押下だけを追加する。
+        if (ranking.count < CHILD_COUNT && ranking.order[0] != button.child_) {
+            ranking.order[ranking.count++] = button.child_;
+        }
         portEXIT_CRITICAL_ISR(&buttonMux);
     }
 
     const uint8_t pin_;
-    bool pendingPress_ = false;
+    const Child child_;
 };
 
 class ResetButton {
@@ -65,34 +73,15 @@ private:
     uint32_t fellAt_ = 0;
 };
 
-Button childOne(22);
-Button childTwo(18);
+Button childOne(22, Child::One);
+Button childTwo(18, Child::Two);
 ResetButton resetButton(15);
 
 constexpr uint8_t LED_ONE = 23;
 constexpr uint8_t LED_TWO = 16;
 
-enum class Child { None = 0, One = 1, Two = 2 };
-
-Child first = Child::None;
-Child second = Child::None;
+uint8_t reportedCount = 0;
 uint32_t firstPressedAt = 0;
-
-void recordPress(Child child, uint32_t now) {
-    unsigned rank;
-    if (first == Child::None) {
-        first = child;
-        firstPressedAt = now;
-        rank = 1;
-    } else if (first != child && second == Child::None) {
-        second = child;
-        rank = 2;
-    } else {
-        return;
-    }
-
-    Serial.printf("PRESS child=%u rank=%u\n", static_cast<unsigned>(child), rank);
-}
 
 void setup() {
     childOne.begin();
@@ -109,27 +98,31 @@ void setup() {
 }
 
 void loop() {
-    // 割り込みと競合しないように、3ボタンの入力をまとめて取り出す。
+    // リセットの判定と着順の読み取りを、子機の割り込みと競合しないように行う。
     portENTER_CRITICAL(&buttonMux);
     const bool resetPressed = resetButton.takePress();
-    const bool onePressed = childOne.takePress();
-    const bool twoPressed = childTwo.takePress();
+    if (resetPressed) {
+        ranking = {};
+    }
+    const Ranking snapshot = ranking;
     portEXIT_CRITICAL(&buttonMux);
 
     const uint32_t now = millis();
     if (resetPressed) {
-        first = Child::None;
-        second = Child::None;
+        reportedCount = 0;
         Serial.println("RESET");
-    } else {
-        // 同じループで両方の押下を受け取った場合は、子機1を先に扱う。
-        if (onePressed) {
-            recordPress(Child::One, now);
-        }
-        if (twoPressed) {
-            recordPress(Child::Two, now);
-        }
     }
+    if (reportedCount == 0 && snapshot.count != 0) {
+        firstPressedAt = now;
+    }
+    for (; reportedCount < snapshot.count; ++reportedCount) {
+        Serial.printf("PRESS child=%u rank=%u\n",
+                      static_cast<unsigned>(snapshot.order[reportedCount]),
+                      static_cast<unsigned>(reportedCount) + 1);
+    }
+
+    const Child first = snapshot.order[0];
+    const Child second = snapshot.order[1];
 
     const bool blinkOn = ((now - firstPressedAt) / BLINK_HALF_PERIOD_MS) % 2 == 0;
     digitalWrite(LED_ONE, (first == Child::One && blinkOn) || second == Child::One);
