@@ -23,8 +23,15 @@ private:
     static void ARDUINO_ISR_ATTR onFalling(void* context) {
         auto& button = *static_cast<Button*>(context);
         portENTER_CRITICAL_ISR(&buttonMux);
-        // 空きがある間は、先頭の子機と異なる押下だけを追加する。
-        if (ranking.count < CHILD_COUNT && ranking.order[0].child != button.child_) {
+        // 回答待ちにいる子機の連打は無視し、不正解で外れた子機は再参加できる。
+        bool alreadyWaiting = false;
+        for (uint8_t i = 0; i < ranking.count; ++i) {
+            if (ranking.order[i].child == button.child_) {
+                alreadyWaiting = true;
+                break;
+            }
+        }
+        if (ranking.count < CHILD_COUNT && !alreadyWaiting) {
             auto& press = ranking.order[ranking.count++];
             press.child = button.child_;
             press.elapsedMs = static_cast<uint32_t>(millis()) - resetAtMs;
@@ -85,21 +92,28 @@ void begin() {
 }
 
 Snapshot poll(Command command) {
-    // リセットの判定と着順の読み取りを、子機の割り込みと競合しないように行う。
+    // 判定・リセット・着順の読み取りを、子機の割り込みと競合しないように行う。
     portENTER_CRITICAL(&buttonMux);
     const bool buttonPressed = resetButton.takePress();
-    // 物理リセットを優先し、正解対象の確定と消去を同じ排他区間で行う。
+    // 物理リセットを優先し、判定対象の確定と着順の更新を同じ排他区間で行う。
     const Child correctChild = !buttonPressed && command == Command::Correct && ranking.count > 0
                                    ? ranking.order[0].child
                                    : Child::None;
     const bool resetPressed = buttonPressed || command == Command::Reset || correctChild != Child::None;
+    Child wrongChild = Child::None;
     if (resetPressed) {
         ranking = Ranking{};
         resetAtMs = millis();
+    } else if (command == Command::Wrong && ranking.count > 0) {
+        wrongChild = ranking.order[0].child;
+        for (uint8_t i = 1; i < ranking.count; ++i) {
+            ranking.order[i - 1] = ranking.order[i];
+        }
+        ranking.order[--ranking.count] = Press{};
     }
     const Ranking snapshot = ranking;
     portEXIT_CRITICAL(&buttonMux);
-    return {snapshot, resetPressed, correctChild};
+    return {snapshot, resetPressed, correctChild, wrongChild};
 }
 
 }  // 名前空間 buzzer_inputs

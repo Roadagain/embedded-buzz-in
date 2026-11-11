@@ -33,6 +33,8 @@ Command takeSerialCommand() {
                 result = Command::Reset;
             } else if (!overflow && length == 7 && strcmp(command, "correct") == 0) {
                 result = Command::Correct;
+            } else if (!overflow && length == 5 && strcmp(command, "wrong") == 0) {
+                result = Command::Wrong;
             } else {
                 Serial.println(overflow ? "ERROR command_too_long" : "ERROR unknown_command");
             }
@@ -68,7 +70,14 @@ void loop() {
     const uint32_t now = millis();
     if (input.correctChild != Child::None) {
         Serial.printf("JUDGE result=correct child=%u\n", static_cast<unsigned>(input.correctChild));
-    } else if (command == Command::Correct && !input.resetPressed) {
+    } else if (input.wrongChild != Child::None) {
+        Serial.printf("JUDGE result=wrong child=%u\n", static_cast<unsigned>(input.wrongChild));
+        // 先頭の削除分だけ報告済み件数を減らし、繰り上げを新規押下として出力しない。
+        if (reportedCount > 0) {
+            --reportedCount;
+        }
+        firstPressedAt = now;
+    } else if ((command == Command::Correct || command == Command::Wrong) && !input.resetPressed) {
         Serial.println("ERROR no_answerer");
     }
     if (input.resetPressed) {
