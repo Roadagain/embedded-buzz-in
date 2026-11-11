@@ -1,7 +1,7 @@
 #include <Arduino.h>
-#include <string.h>
 
 #include "buzzer_inputs.h"
+#include "serial_commands.h"
 
 using buzzer_inputs::Child;
 using buzzer_inputs::Command;
@@ -13,43 +13,6 @@ constexpr uint8_t LED_TWO = 16;
 
 uint8_t reportedCount = 0;
 uint32_t firstPressedAt = 0;
-
-Command takeSerialCommand() {
-    static char command[32];
-    static size_t length = 0;
-    static bool overflow = false;
-
-    // 1ループの受信量を制限し、入力途中でもLEDと早押しを処理する。
-    for (size_t readCount = 0; readCount < sizeof(command) && Serial.available() > 0;
-         ++readCount) {
-        const char ch = static_cast<char>(Serial.read());
-        if (ch == '\r' || ch == '\n') {
-            if (length == 0 && !overflow) {
-                continue;
-            }
-            command[length] = '\0';
-            Command result = Command::None;
-            if (!overflow && length == 5 && strcmp(command, "reset") == 0) {
-                result = Command::Reset;
-            } else if (!overflow && length == 7 && strcmp(command, "correct") == 0) {
-                result = Command::Correct;
-            } else if (!overflow && length == 5 && strcmp(command, "wrong") == 0) {
-                result = Command::Wrong;
-            } else {
-                Serial.println(overflow ? "ERROR command_too_long" : "ERROR unknown_command");
-            }
-            length = 0;
-            overflow = false;
-            return result;
-        }
-        if (length < sizeof(command) - 1) {
-            command[length++] = ch;
-        } else {
-            overflow = true;
-        }
-    }
-    return Command::None;
-}
 
 void setup() {
     buzzer_inputs::begin();
@@ -64,7 +27,7 @@ void setup() {
 }
 
 void loop() {
-    const Command command = takeSerialCommand();
+    const Command command = serial_commands::poll();
     const auto input = buzzer_inputs::poll(command);
     const auto& ranking = input.ranking;
     const uint32_t now = millis();
