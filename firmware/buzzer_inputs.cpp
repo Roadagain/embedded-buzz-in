@@ -23,8 +23,8 @@ private:
         auto& button = *static_cast<Button*>(context);
         portENTER_CRITICAL_ISR(&buttonMux);
         // 空きがある間は、先頭の子機と異なる押下だけを追加する。
-        if (ranking.count < CHILD_COUNT && ranking.order[0] != button.child_) {
-            ranking.order[ranking.count++] = button.child_;
+        if (ranking.count < CHILD_COUNT && ranking.order[0].child != button.child_) {
+            ranking.order[ranking.count++].child = button.child_;
         }
         portEXIT_CRITICAL_ISR(&buttonMux);
     }
@@ -84,7 +84,7 @@ Snapshot poll() {
     portENTER_CRITICAL(&buttonMux);
     const bool resetPressed = resetButton.takePress();
     if (resetPressed) {
-        ranking = {};
+        ranking = Ranking{};
     }
     const Ranking snapshot = ranking;
     portEXIT_CRITICAL(&buttonMux);
