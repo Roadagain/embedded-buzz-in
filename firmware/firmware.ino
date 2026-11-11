@@ -36,9 +36,10 @@ void loop() {
         firstPressedAt = now;
     }
     for (; reportedCount < ranking.count; ++reportedCount) {
-        Serial.printf("PRESS child=%u rank=%u\n",
+        Serial.printf("PRESS child=%u rank=%u elapsed_ms=%lu\n",
                       static_cast<unsigned>(ranking.order[reportedCount].child),
-                      static_cast<unsigned>(reportedCount) + 1);
+                      static_cast<unsigned>(reportedCount) + 1,
+                      static_cast<unsigned long>(ranking.order[reportedCount].elapsedMs));
     }
 
     const Child first = ranking.order[0].child;
