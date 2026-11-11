@@ -38,14 +38,16 @@ void loop() {
     if (input.correctChild != Child::None) {
         Serial.printf("JUDGE result=correct child=%u\n", static_cast<unsigned>(input.correctChild));
     } else if (input.wrongChild != Child::None) {
-        Serial.printf("JUDGE result=wrong child=%u\n", static_cast<unsigned>(input.wrongChild));
+        promotedChild = ranking.count > 0 ? ranking.order[0].child : Child::None;
+        Serial.printf("JUDGE result=wrong child=%u next_child=%u\n",
+                      static_cast<unsigned>(input.wrongChild),
+                      static_cast<unsigned>(promotedChild));
         // 先頭の削除分だけ報告済み件数を減らし、繰り上げを新規押下として出力しない。
         if (reportedCount > 0) {
             --reportedCount;
         }
         wrongTransition = true;
         wrongAt = now;
-        promotedChild = ranking.count > 0 ? ranking.order[0].child : Child::None;
     } else if ((command == Command::Correct || command == Command::Wrong) && !input.resetPressed) {
         Serial.println("ERROR no_answerer");
     }

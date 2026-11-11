@@ -11,7 +11,7 @@ import threading
 PROMOTION_DELAY_SECONDS = 1.0
 LOGGER = logging.getLogger("bridge")
 PRESS = re.compile(r"PRESS child=([1-9]\d*) rank=([1-9]\d*)(?: elapsed_ms=\d+)?")
-WRONG = re.compile(r"JUDGE result=wrong child=([1-9]\d*)")
+WRONG = re.compile(r"JUDGE result=wrong child=[1-9]\d* next_child=(0|[1-9]\d*)")
 
 
 class PressSound:
@@ -22,7 +22,6 @@ class PressSound:
         self.pending_promotion = None
         self.process = None
         self.retired = []
-        self.ranking = {}
         self.filename = None
         self.player = None
         if filename is None:
@@ -50,20 +49,16 @@ class PressSound:
         should_play = False
         if line in ("BOOT", "RESET") or line.startswith("JUDGE result=correct child="):
             self._cancel_promotion()
-            self.ranking.clear()
         press = PRESS.fullmatch(line)
         wrong = WRONG.fullmatch(line)
         if press is not None:
-            child, rank = map(int, press.groups())
+            rank = int(press.group(2))
             if rank == 1:
                 self._cancel_promotion()
-                self.ranking.clear()
                 should_play = True
-            self.ranking[rank] = child
-        elif wrong is not None and self.ranking.get(1) == int(wrong.group(1)):
-            self.ranking = {rank - 1: child for rank, child in self.ranking.items() if rank > 1}
+        elif wrong is not None:
             self._cancel_promotion()
-            if self.filename is not None and 1 in self.ranking:
+            if self.filename is not None and int(wrong.group(1)) != 0:
                 timer = threading.Timer(
                     PROMOTION_DELAY_SECONDS, lambda: self._play_promotion(timer)
                 )
@@ -109,10 +104,9 @@ class PressSound:
             LOGGER.warning("Press sound could not start: %s", error)
 
     def reset(self):
-        """Stop playback and discard the previous connection's ranking."""
+        """Stop playback and cancel the previous connection's pending sound."""
         with self.lock:
             self.close()
-            self.ranking.clear()
 
     def close(self):
         with self.lock:
