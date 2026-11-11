@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include <string.h>
 
 #include "buzzer_inputs.h"
 
@@ -11,6 +12,37 @@ constexpr uint8_t LED_TWO = 16;
 
 uint8_t reportedCount = 0;
 uint32_t firstPressedAt = 0;
+
+bool takeSerialReset() {
+    static char command[32];
+    static size_t length = 0;
+    static bool overflow = false;
+
+    // 1ループの受信量を制限し、入力途中でもLEDと早押しを処理する。
+    for (size_t readCount = 0; readCount < sizeof(command) && Serial.available() > 0;
+         ++readCount) {
+        const char ch = static_cast<char>(Serial.read());
+        if (ch == '\r' || ch == '\n') {
+            if (length == 0 && !overflow) {
+                continue;
+            }
+            command[length] = '\0';
+            const bool reset = !overflow && length == 5 && strcmp(command, "reset") == 0;
+            if (!reset) {
+                Serial.println(overflow ? "ERROR command_too_long" : "ERROR unknown_command");
+            }
+            length = 0;
+            overflow = false;
+            return reset;
+        }
+        if (length < sizeof(command) - 1) {
+            command[length++] = ch;
+        } else {
+            overflow = true;
+        }
+    }
+    return false;
+}
 
 void setup() {
     buzzer_inputs::begin();
@@ -25,7 +57,8 @@ void setup() {
 }
 
 void loop() {
-    const auto input = buzzer_inputs::poll();
+    const bool resetRequested = takeSerialReset();
+    const auto input = buzzer_inputs::poll(resetRequested);
     const auto& ranking = input.ranking;
     const uint32_t now = millis();
     if (input.resetPressed) {

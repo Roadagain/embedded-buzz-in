@@ -24,6 +24,6 @@ struct Snapshot {
 };
 
 void begin();
-Snapshot poll();
+Snapshot poll(bool resetRequested = false);
 
 }  // 名前空間 buzzer_inputs

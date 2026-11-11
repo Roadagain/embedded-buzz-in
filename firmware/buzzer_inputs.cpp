@@ -84,10 +84,11 @@ void begin() {
     resetButton.begin();
 }
 
-Snapshot poll() {
+Snapshot poll(bool resetRequested) {
     // リセットの判定と着順の読み取りを、子機の割り込みと競合しないように行う。
     portENTER_CRITICAL(&buttonMux);
-    const bool resetPressed = resetButton.takePress();
+    const bool buttonPressed = resetButton.takePress();
+    const bool resetPressed = buttonPressed || resetRequested;
     if (resetPressed) {
         ranking = Ranking{};
         resetAtMs = millis();
