@@ -52,6 +52,66 @@ class PressSoundTests(unittest.TestCase):
         PressSound(None).handle_line("PRESS child=1 rank=1")
         self.launch.assert_not_called()
 
+    def test_wrong_answer_plays_for_waiting_child(self):
+        sound = PressSound("sound.aiff")
+        sound.handle_line("PRESS child=1 rank=1 elapsed_ms=0")
+        sound.handle_line("PRESS child=2 rank=2 elapsed_ms=10")
+        self.launch.assert_called_once()
+        self.launch.return_value.poll.return_value = 0
+        sound.handle_line("JUDGE result=wrong child=1")
+        self.assertEqual(self.launch.call_count, 2)
+        self.assertEqual(sound.ranking, {1: 2})
+
+    def test_promotion_restarts_active_sound_without_waiting(self):
+        first, second = Mock(), Mock()
+        first.poll.return_value = second.poll.return_value = None
+        self.launch.side_effect = [first, second]
+        sound = PressSound("sound.aiff")
+        sound.handle_line("PRESS child=1 rank=1")
+        sound.handle_line("PRESS child=2 rank=2")
+        sound.handle_line("JUDGE result=wrong child=1")
+        first.terminate.assert_called_once()
+        first.wait.assert_not_called()
+        self.assertEqual(self.launch.call_count, 2)
+        first.poll.return_value = 0
+        sound.handle_line("ERROR no_answerer")
+        self.assertEqual(sound.retired, [])
+        sound.close()
+        second.terminate.assert_called_once()
+        second.wait.assert_called_once_with(timeout=0.5)
+
+    def test_wrong_without_waiting_child_does_not_play(self):
+        sound = PressSound("sound.aiff")
+        sound.handle_line("PRESS child=1 rank=1")
+        sound.handle_line("JUDGE result=wrong child=1")
+        self.launch.assert_called_once()
+        self.assertEqual(sound.ranking, {})
+
+    def test_reset_boot_and_correct_clear_waiting_children(self):
+        for event in ("RESET", "BOOT", "JUDGE result=correct child=1"):
+            with self.subTest(event=event):
+                self.launch.reset_mock()
+                sound = PressSound("sound.aiff")
+                sound.handle_line("PRESS child=1 rank=1")
+                sound.handle_line("PRESS child=2 rank=2")
+                sound.handle_line(event)
+                sound.handle_line("JUDGE result=wrong child=1")
+                self.launch.assert_called_once()
+                self.assertEqual(sound.ranking, {})
+
+    def test_rejoining_child_can_be_promoted_again(self):
+        sound = PressSound("sound.aiff")
+        sound.handle_line("PRESS child=1 rank=1")
+        sound.handle_line("PRESS child=2 rank=2")
+        self.launch.return_value.poll.return_value = 0
+        sound.handle_line("JUDGE result=wrong child=1")
+        sound.handle_line("PRESS child=1 rank=2")
+        sound.handle_line("JUDGE result=wrong child=2")
+        self.assertEqual(self.launch.call_count, 3)
+        self.assertEqual(sound.ranking, {1: 1})
+        sound.handle_line("JUDGE result=wrong child=1")
+        self.assertEqual(self.launch.call_count, 3)
+
     def test_missing_file_or_player_disables_sound(self):
         with patch("bridge.Path.is_file", return_value=False):
             sound = PressSound("missing.aiff")
