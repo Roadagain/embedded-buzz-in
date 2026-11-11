@@ -5,20 +5,23 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+import threading
 
 
+PROMOTION_DELAY_SECONDS = 1.0
 LOGGER = logging.getLogger("bridge")
 PRESS = re.compile(r"PRESS child=([1-9]\d*) rank=([1-9]\d*)(?: elapsed_ms=\d+)?")
-WRONG = re.compile(r"JUDGE result=wrong child=([1-9]\d*)")
+WRONG = re.compile(r"JUDGE result=wrong child=[1-9]\d* next_child=(0|[1-9]\d*)")
 
 
 class PressSound:
     """Play first-place presses and promotions without queuing sounds."""
 
     def __init__(self, filename):
+        self.lock = threading.RLock()
+        self.pending_promotion = None
         self.process = None
         self.retired = []
-        self.ranking = {}
         self.filename = None
         self.player = None
         if filename is None:
@@ -31,6 +34,10 @@ class PressSound:
         self.filename = str(path)
 
     def handle_line(self, line):
+        with self.lock:
+            self._handle_line(line)
+
+    def _handle_line(self, line):
         # Reap interrupted playback without waiting in the serial receive loop.
         self.retired = [process for process in self.retired if process.poll() is None]
         if self.process is not None:
@@ -39,23 +46,43 @@ class PressSound:
                 if status != 0:
                     LOGGER.warning("Press sound playback failed (exit status %s)", status)
                 self.process = None
-        promoted = False
         should_play = False
         if line in ("BOOT", "RESET") or line.startswith("JUDGE result=correct child="):
-            self.ranking.clear()
+            self._cancel_promotion()
         press = PRESS.fullmatch(line)
         wrong = WRONG.fullmatch(line)
         if press is not None:
-            child, rank = map(int, press.groups())
+            rank = int(press.group(2))
             if rank == 1:
-                self.ranking.clear()
+                self._cancel_promotion()
                 should_play = True
-            self.ranking[rank] = child
-        elif wrong is not None and self.ranking.get(1) == int(wrong.group(1)):
-            self.ranking = {rank - 1: child for rank, child in self.ranking.items() if rank > 1}
-            promoted = 1 in self.ranking
-            should_play = promoted
-        if self.filename is None or not should_play:
+        elif wrong is not None:
+            self._cancel_promotion()
+            if self.filename is not None and int(wrong.group(1)) != 0:
+                timer = threading.Timer(
+                    PROMOTION_DELAY_SECONDS, lambda: self._play_promotion(timer)
+                )
+                timer.daemon = True
+                self.pending_promotion = timer
+                timer.start()
+        if should_play:
+            self._play(promoted=False)
+
+    def _cancel_promotion(self):
+        if self.pending_promotion is not None:
+            self.pending_promotion.cancel()
+            self.pending_promotion = None
+
+    def _play_promotion(self, timer):
+        with self.lock:
+            # A canceled callback may already be waiting for this lock.
+            if self.pending_promotion is not timer:
+                return
+            self.pending_promotion = None
+            self._play(promoted=True)
+
+    def _play(self, *, promoted):
+        if self.filename is None:
             return
         if self.process is not None:
             if not promoted:
@@ -77,11 +104,16 @@ class PressSound:
             LOGGER.warning("Press sound could not start: %s", error)
 
     def reset(self):
-        """Stop playback and discard the previous connection's ranking."""
-        self.close()
-        self.ranking.clear()
+        """Stop playback and cancel the previous connection's pending sound."""
+        with self.lock:
+            self.close()
 
     def close(self):
+        with self.lock:
+            self._cancel_promotion()
+            self._close()
+
+    def _close(self):
         processes = self.retired + ([self.process] if self.process is not None else [])
         for process in processes:
             if process.poll() is not None:
