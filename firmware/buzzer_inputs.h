@@ -5,6 +5,7 @@
 namespace buzzer_inputs {
 
 enum class Child : uint8_t { None = 0, One = 1, Two = 2 };
+enum class Command : uint8_t { None, Reset, Correct };
 
 constexpr uint8_t CHILD_COUNT = 2;
 
@@ -21,9 +22,10 @@ struct Ranking {
 struct Snapshot {
     Ranking ranking;
     bool resetPressed;
+    Child correctChild = Child::None;
 };
 
 void begin();
-Snapshot poll(bool resetRequested = false);
+Snapshot poll(Command command = Command::None);
 
 }  // 名前空間 buzzer_inputs

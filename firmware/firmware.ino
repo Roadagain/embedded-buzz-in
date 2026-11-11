@@ -4,6 +4,7 @@
 #include "buzzer_inputs.h"
 
 using buzzer_inputs::Child;
+using buzzer_inputs::Command;
 
 constexpr uint32_t BLINK_HALF_PERIOD_MS = 250;
 
@@ -13,7 +14,7 @@ constexpr uint8_t LED_TWO = 16;
 uint8_t reportedCount = 0;
 uint32_t firstPressedAt = 0;
 
-bool takeSerialReset() {
+Command takeSerialCommand() {
     static char command[32];
     static size_t length = 0;
     static bool overflow = false;
@@ -27,13 +28,17 @@ bool takeSerialReset() {
                 continue;
             }
             command[length] = '\0';
-            const bool reset = !overflow && length == 5 && strcmp(command, "reset") == 0;
-            if (!reset) {
+            Command result = Command::None;
+            if (!overflow && length == 5 && strcmp(command, "reset") == 0) {
+                result = Command::Reset;
+            } else if (!overflow && length == 7 && strcmp(command, "correct") == 0) {
+                result = Command::Correct;
+            } else {
                 Serial.println(overflow ? "ERROR command_too_long" : "ERROR unknown_command");
             }
             length = 0;
             overflow = false;
-            return reset;
+            return result;
         }
         if (length < sizeof(command) - 1) {
             command[length++] = ch;
@@ -41,7 +46,7 @@ bool takeSerialReset() {
             overflow = true;
         }
     }
-    return false;
+    return Command::None;
 }
 
 void setup() {
@@ -57,10 +62,15 @@ void setup() {
 }
 
 void loop() {
-    const bool resetRequested = takeSerialReset();
-    const auto input = buzzer_inputs::poll(resetRequested);
+    const Command command = takeSerialCommand();
+    const auto input = buzzer_inputs::poll(command);
     const auto& ranking = input.ranking;
     const uint32_t now = millis();
+    if (input.correctChild != Child::None) {
+        Serial.printf("JUDGE result=correct child=%u\n", static_cast<unsigned>(input.correctChild));
+    } else if (command == Command::Correct && !input.resetPressed) {
+        Serial.println("ERROR no_answerer");
+    }
     if (input.resetPressed) {
         reportedCount = 0;
         Serial.println("RESET");

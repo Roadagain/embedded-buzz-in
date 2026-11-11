@@ -84,18 +84,22 @@ void begin() {
     resetButton.begin();
 }
 
-Snapshot poll(bool resetRequested) {
+Snapshot poll(Command command) {
     // リセットの判定と着順の読み取りを、子機の割り込みと競合しないように行う。
     portENTER_CRITICAL(&buttonMux);
     const bool buttonPressed = resetButton.takePress();
-    const bool resetPressed = buttonPressed || resetRequested;
+    // 物理リセットを優先し、正解対象の確定と消去を同じ排他区間で行う。
+    const Child correctChild = !buttonPressed && command == Command::Correct && ranking.count > 0
+                                   ? ranking.order[0].child
+                                   : Child::None;
+    const bool resetPressed = buttonPressed || command == Command::Reset || correctChild != Child::None;
     if (resetPressed) {
         ranking = Ranking{};
         resetAtMs = millis();
     }
     const Ranking snapshot = ranking;
     portEXIT_CRITICAL(&buttonMux);
-    return {snapshot, resetPressed};
+    return {snapshot, resetPressed, correctChild};
 }
 
 }  // 名前空間 buzzer_inputs
