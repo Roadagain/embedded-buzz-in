@@ -1,1 +1,3 @@
 /build/
+/bridge/.venv/
+/bridge/__pycache__/

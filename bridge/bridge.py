@@ -2,6 +2,7 @@
 """Forward local HTTP actions to USB serial and print firmware events."""
 
 import argparse
+import json
 import logging
 from pathlib import Path
 import re
@@ -16,6 +17,7 @@ import serial
 BAUD_RATE = 115200
 READ_TIMEOUT_SECONDS = 0.2
 WRITE_TIMEOUT_SECONDS = 1.0
+RECONNECT_INTERVAL_SECONDS = 1.0
 LOGGER = logging.getLogger("bridge")
 COMMANDS = {"/reset": b"r", "/correct": b"o", "/wrong": b"x"}
 PRESS = re.compile(r"PRESS child=([1-9]\d*) rank=([1-9]\d*)(?: elapsed_ms=\d+)?")
@@ -101,15 +103,19 @@ class PressSound:
         self.retired = []
 
 
-def log_serial_lines(connection, stop, on_line=None):
+def log_serial_lines(connection, stop, on_line=None, disconnected=None):
     """Retain incomplete lines across read timeouts."""
     pending = bytearray()
-    while not stop.is_set():
+    while not stop.is_set() and not (disconnected and disconnected.is_set()):
         chunk = connection.read(min(connection.in_waiting or 1, 4096))
+        if stop.is_set() or (disconnected and disconnected.is_set()):
+            return
         if not chunk:
             continue
         pending.extend(chunk)
         while b"\n" in pending:
+            if stop.is_set() or (disconnected and disconnected.is_set()):
+                return
             line, _, remainder = pending.partition(b"\n")
             pending = remainder
             decoded = line.rstrip(b"\r").decode("utf-8", errors="replace")
@@ -119,33 +125,76 @@ def log_serial_lines(connection, stop, on_line=None):
 
 
 class SerialBridge:
-    def __init__(self, connection, sound=None):
-        self.connection = connection
+    def __init__(self, port, sound=None, connection_factory=None):
+        self.port = port
+        self.connection = None
+        self.connection_factory = connection_factory or serial.Serial
         self.sound = sound
         self.lock = threading.Lock()
-        self.available = True
+        self.available = False
+        self.disconnected = threading.Event()
+
+    def status(self):
+        with self.lock:
+            connected = self.available and self.connection is not None and self.connection.is_open
+            return {"status": "connected" if connected else "disconnected", "port": self.port}
 
     def send(self, command):
+        # A request waiting for the write lock must not move to a new USB session.
+        connection = self.connection
         with self.lock:
-            if not self.available or not self.connection.is_open:
+            if (connection is None or connection is not self.connection
+                    or not self.available or not connection.is_open):
                 return False
             try:
-                if self.connection.write(command) != len(command):
+                if connection.write(command) != len(command):
                     raise serial.SerialTimeoutException("Incomplete serial write")
             except (serial.SerialException, OSError) as error:
                 self.available = False
+                self.disconnected.set()
                 LOGGER.error("Serial write failed: %s", error)
                 return False
             LOGGER.info("TX %s", command.decode("ascii"))
             return True
 
     def receive(self, stop):
-        try:
-            log_serial_lines(self.connection, stop, self.sound.handle_line if self.sound else None)
-        except (serial.SerialException, OSError) as error:
-            with self.lock:
-                self.available = False
-            LOGGER.error("Serial read failed: %s", error)
+        while not stop.is_set():
+            try:
+                connection = self.connection_factory(
+                    port=self.port,
+                    baudrate=BAUD_RATE,
+                    timeout=READ_TIMEOUT_SECONDS,
+                    write_timeout=WRITE_TIMEOUT_SECONDS,
+                )
+            except (serial.SerialException, OSError) as error:
+                LOGGER.warning("Serial connection failed; retrying: %s", error)
+                stop.wait(RECONNECT_INTERVAL_SECONDS)
+                continue
+            try:
+                with self.lock:
+                    if stop.is_set():
+                        return
+                    self.disconnected.clear()
+                    self.connection = connection
+                    self.available = True
+                LOGGER.info("Connected to %s at %s bps", self.port, BAUD_RATE)
+                log_serial_lines(connection, stop, self.sound.handle_line if self.sound else None,
+                                 self.disconnected)
+            except (serial.SerialException, OSError) as error:
+                LOGGER.warning("Serial read failed; reconnecting: %s", error)
+            finally:
+                with self.lock:
+                    self.available = False
+                    self.connection = None
+                    self.disconnected.set()
+                    try:
+                        connection.close()
+                    except (serial.SerialException, OSError) as error:
+                        LOGGER.warning("Serial close failed: %s", error)
+                if self.sound is not None:
+                    self.sound.close()
+                    self.sound.ranking.clear()
+            stop.wait(RECONNECT_INTERVAL_SECONDS)
 
 
 def make_handler(bridge):
@@ -155,6 +204,10 @@ def make_handler(bridge):
             super().end_headers()
 
         def do_GET(self):
+            if self.path == "/status":
+                body = (json.dumps(bridge.status()) + "\n").encode("utf-8")
+                self.respond(200, body, "application/json; charset=utf-8")
+                return
             command = COMMANDS.get(self.path)
             if command is None:
                 self.send_error(404, "Unknown action")
@@ -163,8 +216,11 @@ def make_handler(bridge):
                 status, body = 202, b"Sent to serial; execution is not confirmed.\n"
             else:
                 status, body = 503, b"Serial connection unavailable; command was not retried.\n"
+            self.respond(status, body)
+
+        def respond(self, status, body, content_type="text/plain; charset=utf-8"):
             self.send_response(status)
-            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.send_header("Content-Type", content_type)
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
@@ -185,24 +241,17 @@ def main(argv=None):
     sound = PressSound(args.press_sound)
 
     try:
-        with serial.Serial(
-            port=args.port,
-            baudrate=BAUD_RATE,
-            timeout=READ_TIMEOUT_SECONDS,
-            write_timeout=WRITE_TIMEOUT_SECONDS,
-        ) as connection:
-            LOGGER.info("Connected to %s at %s bps", args.port, BAUD_RATE)
-            bridge = SerialBridge(connection, sound)
-            with ThreadingHTTPServer(("127.0.0.1", args.http_port), make_handler(bridge)) as server:
-                stop = threading.Event()
-                receiver = threading.Thread(target=bridge.receive, args=(stop,), name="serial-reader")
-                receiver.start()
-                try:
-                    LOGGER.info("HTTP listening on http://127.0.0.1:%s", server.server_port)
-                    server.serve_forever()
-                finally:
-                    stop.set()
-                    receiver.join()
+        bridge = SerialBridge(args.port, sound)
+        with ThreadingHTTPServer(("127.0.0.1", args.http_port), make_handler(bridge)) as server:
+            stop = threading.Event()
+            receiver = threading.Thread(target=bridge.receive, args=(stop,), name="serial-reader")
+            receiver.start()
+            try:
+                LOGGER.info("HTTP listening on http://127.0.0.1:%s", server.server_port)
+                server.serve_forever()
+            finally:
+                stop.set()
+                receiver.join()
     except KeyboardInterrupt:
         LOGGER.info("Stopped")
         return 0
