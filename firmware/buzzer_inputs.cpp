@@ -7,7 +7,14 @@ namespace {
 
 portMUX_TYPE buttonMux = portMUX_INITIALIZER_UNLOCKED;
 
-Ranking ranking;
+struct WaitingQueue {
+    Press entries[CHILD_COUNT]{};
+    uint8_t head = 0;
+    uint8_t tail = 0;
+    uint8_t count = 0;
+};
+
+WaitingQueue waiting;
 uint32_t resetAtMs = 0;
 
 class Button {
@@ -25,16 +32,19 @@ private:
         portENTER_CRITICAL_ISR(&buttonMux);
         // 回答待ちにいる子機の連打は無視し、不正解で外れた子機は再参加できる。
         bool alreadyWaiting = false;
-        for (uint8_t i = 0; i < ranking.count; ++i) {
-            if (ranking.order[i].child == button.child_) {
+        for (uint8_t i = 0; i < waiting.count; ++i) {
+            const uint8_t index = (waiting.head + i) % CHILD_COUNT;
+            if (waiting.entries[index].child == button.child_) {
                 alreadyWaiting = true;
                 break;
             }
         }
-        if (ranking.count < CHILD_COUNT && !alreadyWaiting) {
-            auto& press = ranking.order[ranking.count++];
+        if (waiting.count < CHILD_COUNT && !alreadyWaiting) {
+            auto& press = waiting.entries[waiting.tail];
             press.child = button.child_;
             press.elapsedMs = static_cast<uint32_t>(millis()) - resetAtMs;
+            waiting.tail = (waiting.tail + 1) % CHILD_COUNT;
+            ++waiting.count;
         }
         portEXIT_CRITICAL_ISR(&buttonMux);
     }
@@ -96,22 +106,26 @@ Snapshot poll(Command command) {
     portENTER_CRITICAL(&buttonMux);
     const bool buttonPressed = resetButton.takePress();
     // 物理リセットを優先し、判定対象の確定と着順の更新を同じ排他区間で行う。
-    const Child correctChild = !buttonPressed && command == Command::Correct && ranking.count > 0
-                                   ? ranking.order[0].child
+    const Child correctChild = !buttonPressed && command == Command::Correct && waiting.count > 0
+                                   ? waiting.entries[waiting.head].child
                                    : Child::None;
     const bool resetPressed = buttonPressed || command == Command::Reset || correctChild != Child::None;
     Child wrongChild = Child::None;
     if (resetPressed) {
-        ranking = Ranking{};
+        waiting = WaitingQueue{};
         resetAtMs = millis();
-    } else if (command == Command::Wrong && ranking.count > 0) {
-        wrongChild = ranking.order[0].child;
-        for (uint8_t i = 1; i < ranking.count; ++i) {
-            ranking.order[i - 1] = ranking.order[i];
-        }
-        ranking.order[--ranking.count] = Press{};
+    } else if (command == Command::Wrong && waiting.count > 0) {
+        wrongChild = waiting.entries[waiting.head].child;
+        waiting.entries[waiting.head] = Press{};
+        waiting.head = (waiting.head + 1) % CHILD_COUNT;
+        --waiting.count;
     }
-    const Ranking snapshot = ranking;
+    // 外部にはリングの位置を見せず、先頭から着順に並べたコピーを返す。
+    Ranking snapshot{};
+    snapshot.count = waiting.count;
+    for (uint8_t i = 0; i < waiting.count; ++i) {
+        snapshot.order[i] = waiting.entries[(waiting.head + i) % CHILD_COUNT];
+    }
     portEXIT_CRITICAL(&buttonMux);
     return {snapshot, resetPressed, correctChild, wrongChild};
 }
