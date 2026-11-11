@@ -36,13 +36,14 @@ void loop() {
         firstPressedAt = now;
     }
     for (; reportedCount < ranking.count; ++reportedCount) {
-        Serial.printf("PRESS child=%u rank=%u\n",
-                      static_cast<unsigned>(ranking.order[reportedCount]),
-                      static_cast<unsigned>(reportedCount) + 1);
+        Serial.printf("PRESS child=%u rank=%u elapsed_ms=%lu\n",
+                      static_cast<unsigned>(ranking.order[reportedCount].child),
+                      static_cast<unsigned>(reportedCount) + 1,
+                      static_cast<unsigned long>(ranking.order[reportedCount].elapsedMs));
     }
 
-    const Child first = ranking.order[0];
-    const Child second = ranking.order[1];
+    const Child first = ranking.order[0].child;
+    const Child second = ranking.order[1].child;
 
     const bool blinkOn = ((now - firstPressedAt) / BLINK_HALF_PERIOD_MS) % 2 == 0;
     digitalWrite(LED_ONE, (first == Child::One && blinkOn) || second == Child::One);
