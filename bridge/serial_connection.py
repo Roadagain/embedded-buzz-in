@@ -35,11 +35,12 @@ def log_serial_lines(connection, stop, on_line=None, disconnected=None):
 
 
 class SerialBridge:
-    def __init__(self, port, sound=None, connection_factory=None):
+    def __init__(self, port, *, on_line=None, on_disconnect=None, connection_factory=None):
         self.port = port
         self.connection = None
         self.connection_factory = connection_factory or serial.Serial
-        self.sound = sound
+        self.on_line = on_line
+        self.on_disconnect = on_disconnect
         self.lock = threading.Lock()
         self.available = False
         self.disconnected = threading.Event()
@@ -88,8 +89,7 @@ class SerialBridge:
                     self.connection = connection
                     self.available = True
                 LOGGER.info("Connected to %s at %s bps", self.port, BAUD_RATE)
-                log_serial_lines(connection, stop, self.sound.handle_line if self.sound else None,
-                                 self.disconnected)
+                log_serial_lines(connection, stop, self.on_line, self.disconnected)
             except (serial.SerialException, OSError) as error:
                 LOGGER.warning("Serial read failed; reconnecting: %s", error)
             finally:
@@ -101,7 +101,6 @@ class SerialBridge:
                         connection.close()
                     except (serial.SerialException, OSError) as error:
                         LOGGER.warning("Serial close failed: %s", error)
-                if self.sound is not None:
-                    self.sound.close()
-                    self.sound.ranking.clear()
+                if self.on_disconnect is not None:
+                    self.on_disconnect()
             stop.wait(RECONNECT_INTERVAL_SECONDS)

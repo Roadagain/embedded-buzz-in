@@ -26,7 +26,7 @@ def main(argv=None):
     sound = PressSound(args.press_sound)
 
     try:
-        bridge = SerialBridge(args.port, sound)
+        bridge = SerialBridge(args.port, on_line=sound.handle_line, on_disconnect=sound.reset)
         with ThreadingHTTPServer(("127.0.0.1", args.http_port), make_handler(bridge)) as server:
             stop = threading.Event()
             receiver = threading.Thread(target=bridge.receive, args=(stop,), name="serial-reader")

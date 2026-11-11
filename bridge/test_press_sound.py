@@ -153,6 +153,23 @@ class PressSoundTests(unittest.TestCase):
         self.launch.return_value.wait.assert_called_once_with(timeout=0.5)
         self.assertIsNone(sound.process)
 
+    def test_reset_stops_sound_and_discards_old_ranking(self):
+        first, second = Mock(), Mock()
+        first.poll.return_value = second.poll.return_value = None
+        self.launch.side_effect = [first, second]
+        sound = PressSound("sound.aiff")
+        sound.handle_line("PRESS child=1 rank=1")
+        sound.handle_line("PRESS child=2 rank=2")
+        sound.reset()
+        first.terminate.assert_called_once()
+        first.wait.assert_called_once_with(timeout=0.5)
+        self.assertEqual(sound.ranking, {})
+        self.assertIsNone(sound.process)
+        sound.handle_line("JUDGE result=wrong child=1")
+        self.launch.assert_called_once()
+        sound.handle_line("PRESS child=2 rank=1")
+        self.assertEqual(self.launch.call_count, 2)
+
 
 if __name__ == "__main__":
     unittest.main()

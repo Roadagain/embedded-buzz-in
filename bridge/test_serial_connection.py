@@ -7,7 +7,6 @@ from unittest.mock import patch
 
 import serial
 
-from press_sound import PressSound
 from serial_connection import SerialBridge
 from test_support import FakeSerial
 
@@ -19,8 +18,13 @@ class ReconnectionTests(unittest.TestCase):
         self.addCleanup(retry.stop)
         self.stop = threading.Event()
         self.results = queue.Queue()
-        self.sound = PressSound(None)
-        self.bridge = SerialBridge("test-port", self.sound, self.open_connection)
+        self.events = []
+        self.bridge = SerialBridge(
+            "test-port",
+            on_line=lambda line: self.events.append(("line", line)),
+            on_disconnect=lambda: self.events.append(("disconnected", None)),
+            connection_factory=self.open_connection,
+        )
         self.worker = threading.Thread(target=self.bridge.receive, args=(self.stop,))
         self.worker.start()
         self.addCleanup(self.shutdown)
@@ -84,22 +88,37 @@ class ReconnectionTests(unittest.TestCase):
         self.assertTrue(self.bridge.send(b"o"))
         self.assertEqual(second.writes, [b"o"])
 
-    def test_reconnection_discards_old_rankings_and_partial_lines(self):
+    def test_reconnection_notifies_disconnect_and_discards_partial_lines(self):
         first = self.connect()
         first.incoming.put(b"PRESS child=1 rank=1\nPRESS child=2 rank=2\nPRESS child=")
-        self.wait_for(lambda: self.sound.ranking == {1: 1, 2: 2})
+        self.wait_for(lambda: len(self.events) == 2)
         first.incoming.put(serial.SerialException("USB removed"))
         self.assertTrue(first.closed.wait(3))
         second = self.connect()
-        self.assertEqual(self.sound.ranking, {})
+        self.assertEqual(self.events, [
+            ("line", "PRESS child=1 rank=1"),
+            ("line", "PRESS child=2 rank=2"),
+            ("disconnected", None),
+        ])
         second.incoming.put(b"1 rank=1\nPRESS child=2 rank=1\n")
-        self.wait_for(lambda: self.sound.ranking == {1: 2})
+        self.wait_for(lambda: len(self.events) == 5)
+        self.assertEqual(self.events[-2:], [("line", "1 rank=1"), ("line", "PRESS child=2 rank=1")])
 
     def test_shutdown_closes_connected_port(self):
         connection = self.connect()
         self.shutdown()
         self.assertTrue(connection.closed.is_set())
         self.assertEqual(self.bridge.status()["status"], "disconnected")
+        self.assertEqual(self.events, [("disconnected", None)])
+
+    def test_disconnect_callback_runs_after_port_is_closed(self):
+        connection = self.connect()
+        observations = []
+        self.bridge.on_disconnect = lambda: observations.append(
+            (connection.closed.is_set(), self.bridge.status()["status"]))
+        connection.incoming.put(serial.SerialException("USB removed"))
+        self.wait_for(lambda: len(observations) == 1)
+        self.assertEqual(observations, [(True, "disconnected")])
 
     def test_request_waiting_for_lock_does_not_use_new_session(self):
         old = self.connect()

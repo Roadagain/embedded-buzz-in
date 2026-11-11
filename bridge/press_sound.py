@@ -76,6 +76,11 @@ class PressSound:
         except OSError as error:
             LOGGER.warning("Press sound could not start: %s", error)
 
+    def reset(self):
+        """Stop playback and discard the previous connection's ranking."""
+        self.close()
+        self.ranking.clear()
+
     def close(self):
         processes = self.retired + ([self.process] if self.process is not None else [])
         for process in processes:
