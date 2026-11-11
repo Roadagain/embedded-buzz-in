@@ -1,8 +1,10 @@
 #include <Arduino.h>
 
 #include "buzzer_inputs.h"
+#include "serial_commands.h"
 
 using buzzer_inputs::Child;
+using buzzer_inputs::Command;
 
 constexpr uint32_t BLINK_HALF_PERIOD_MS = 250;
 
@@ -25,9 +27,22 @@ void setup() {
 }
 
 void loop() {
-    const auto input = buzzer_inputs::poll();
+    const Command command = serial_commands::poll();
+    const auto input = buzzer_inputs::poll(command);
     const auto& ranking = input.ranking;
     const uint32_t now = millis();
+    if (input.correctChild != Child::None) {
+        Serial.printf("JUDGE result=correct child=%u\n", static_cast<unsigned>(input.correctChild));
+    } else if (input.wrongChild != Child::None) {
+        Serial.printf("JUDGE result=wrong child=%u\n", static_cast<unsigned>(input.wrongChild));
+        // 先頭の削除分だけ報告済み件数を減らし、繰り上げを新規押下として出力しない。
+        if (reportedCount > 0) {
+            --reportedCount;
+        }
+        firstPressedAt = now;
+    } else if ((command == Command::Correct || command == Command::Wrong) && !input.resetPressed) {
+        Serial.println("ERROR no_answerer");
+    }
     if (input.resetPressed) {
         reportedCount = 0;
         Serial.println("RESET");
