@@ -3,6 +3,10 @@
 
 import argparse
 import logging
+from pathlib import Path
+import re
+import shutil
+import subprocess
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -14,9 +18,63 @@ READ_TIMEOUT_SECONDS = 0.2
 WRITE_TIMEOUT_SECONDS = 1.0
 LOGGER = logging.getLogger("bridge")
 COMMANDS = {"/reset": b"r", "/correct": b"o", "/wrong": b"x"}
+FIRST_PRESS = re.compile(r"PRESS child=[1-9]\d* rank=1(?: elapsed_ms=\d+)?")
 
 
-def log_serial_lines(connection, stop):
+class PressSound:
+    """Play first-place presses without blocking reception or queuing sounds."""
+
+    def __init__(self, filename):
+        self.process = None
+        self.filename = None
+        self.player = None
+        if filename is None:
+            return
+        path = Path(filename).expanduser().resolve()
+        self.player = shutil.which("afplay")
+        if not path.is_file() or self.player is None:
+            LOGGER.warning("Press sound disabled: sound file or afplay not found: %s", path)
+            return
+        self.filename = str(path)
+
+    def handle_line(self, line):
+        if self.process is not None:
+            status = self.process.poll()
+            if status is not None:
+                if status != 0:
+                    LOGGER.warning("Press sound playback failed (exit status %s)", status)
+                self.process = None
+        if self.filename is None or FIRST_PRESS.fullmatch(line) is None:
+            return
+        if self.process is not None:
+            # Do not accumulate delayed sounds when presses arrive close together.
+            LOGGER.debug("Press sound skipped: playback already active")
+            return
+        try:
+            self.process = subprocess.Popen(
+                [self.player, self.filename],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            LOGGER.info("Playing press sound: %s", self.filename)
+        except OSError as error:
+            LOGGER.warning("Press sound could not start: %s", error)
+
+    def close(self):
+        if self.process is None:
+            return
+        if self.process.poll() is None:
+            self.process.terminate()
+            try:
+                self.process.wait(timeout=0.5)
+            except subprocess.TimeoutExpired:
+                self.process.kill()
+                self.process.wait()
+        self.process = None
+
+
+def log_serial_lines(connection, stop, on_line=None):
     """Retain incomplete lines across read timeouts."""
     pending = bytearray()
     while not stop.is_set():
@@ -27,12 +85,16 @@ def log_serial_lines(connection, stop):
         while b"\n" in pending:
             line, _, remainder = pending.partition(b"\n")
             pending = remainder
-            LOGGER.info("RX %s", line.rstrip(b"\r").decode("utf-8", errors="replace"))
+            decoded = line.rstrip(b"\r").decode("utf-8", errors="replace")
+            LOGGER.info("RX %s", decoded)
+            if on_line is not None:
+                on_line(decoded)
 
 
 class SerialBridge:
-    def __init__(self, connection):
+    def __init__(self, connection, sound=None):
         self.connection = connection
+        self.sound = sound
         self.lock = threading.Lock()
         self.available = True
 
@@ -52,7 +114,7 @@ class SerialBridge:
 
     def receive(self, stop):
         try:
-            log_serial_lines(self.connection, stop)
+            log_serial_lines(self.connection, stop, self.sound.handle_line if self.sound else None)
         except (serial.SerialException, OSError) as error:
             with self.lock:
                 self.available = False
@@ -90,8 +152,10 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--port", required=True, help="Serial port, e.g. /dev/cu.usbserial-10")
     parser.add_argument("--http-port", type=int, default=58912, help="Local HTTP port (default: 58912)")
+    parser.add_argument("--press-sound", help="Audio file for rank=1 presses (macOS afplay; default: silent)")
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    sound = PressSound(args.press_sound)
 
     try:
         with serial.Serial(
@@ -101,7 +165,7 @@ def main(argv=None):
             write_timeout=WRITE_TIMEOUT_SECONDS,
         ) as connection:
             LOGGER.info("Connected to %s at %s bps", args.port, BAUD_RATE)
-            bridge = SerialBridge(connection)
+            bridge = SerialBridge(connection, sound)
             with ThreadingHTTPServer(("127.0.0.1", args.http_port), make_handler(bridge)) as server:
                 stop = threading.Event()
                 receiver = threading.Thread(target=bridge.receive, args=(stop,), name="serial-reader")
@@ -118,6 +182,8 @@ def main(argv=None):
     except (serial.SerialException, OSError) as error:
         LOGGER.error("Bridge failed: %s", error)
         return 1
+    finally:
+        sound.close()
     return 0
 
 

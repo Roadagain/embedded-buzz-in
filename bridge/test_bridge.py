@@ -4,11 +4,100 @@ import http.client
 import threading
 import time
 import unittest
+from unittest.mock import Mock, patch
 from http.server import ThreadingHTTPServer
 
 import serial
 
-from bridge import SerialBridge, make_handler
+from bridge import PressSound, SerialBridge, log_serial_lines, make_handler
+
+
+class PressSoundTests(unittest.TestCase):
+    def setUp(self):
+        player = patch("bridge.shutil.which", return_value="/usr/bin/afplay")
+        file_check = patch("bridge.Path.is_file", return_value=True)
+        launch = patch("bridge.subprocess.Popen")
+        self.addCleanup(player.stop)
+        self.addCleanup(file_check.stop)
+        self.addCleanup(launch.stop)
+        player.start()
+        file_check.start()
+        self.launch = launch.start()
+        self.launch.return_value.poll.return_value = None
+
+    def test_only_first_place_press_plays(self):
+        sound = PressSound("sound with spaces.aiff")
+        for line in ("BOOT", "RESET", "PRESS child=2 rank=2 elapsed_ms=10",
+                     "PRESS child=1 rank=10", "PRESS child=0 rank=1",
+                     "JUDGE result=wrong child=1", "ERROR no_answerer"):
+            sound.handle_line(line)
+        self.launch.assert_not_called()
+        sound.handle_line("PRESS child=2 rank=1 elapsed_ms=0")
+        self.launch.assert_called_once()
+        command = self.launch.call_args.args[0]
+        self.assertEqual(command[0], "/usr/bin/afplay")
+        self.assertTrue(command[1].endswith("/sound with spaces.aiff"))
+        self.launch.return_value.wait.assert_not_called()
+
+    def test_overlapping_presses_are_not_queued(self):
+        sound = PressSound("sound.aiff")
+        sound.handle_line("PRESS child=1 rank=1")
+        sound.handle_line("PRESS child=2 rank=1")
+        self.launch.assert_called_once()
+        self.launch.return_value.poll.return_value = 0
+        sound.handle_line("PRESS child=2 rank=1")
+        self.assertEqual(self.launch.call_count, 2)
+
+    def test_sound_is_optional(self):
+        PressSound(None).handle_line("PRESS child=1 rank=1")
+        self.launch.assert_not_called()
+
+    def test_missing_file_or_player_disables_sound(self):
+        with patch("bridge.Path.is_file", return_value=False):
+            sound = PressSound("missing.aiff")
+        sound.handle_line("PRESS child=1 rank=1")
+        with patch("bridge.shutil.which", return_value=None):
+            sound = PressSound("sound.aiff")
+        sound.handle_line("PRESS child=1 rank=1")
+        self.launch.assert_not_called()
+
+    def test_playback_failures_do_not_stop_serial_reception(self):
+        sound = PressSound("sound.aiff")
+        self.launch.side_effect = OSError("player unavailable")
+        stop = threading.Event()
+        chunks = iter([b"PRESS child=1 ra", b"", b"nk=1 elapsed_ms=0\r\nRESET\n"])
+        connection = Mock(in_waiting=1024)
+
+        def read(size):
+            try:
+                return next(chunks)
+            except StopIteration:
+                stop.set()
+                return b""
+
+        connection.read.side_effect = read
+        with self.assertLogs("bridge", level="INFO") as logs:
+            log_serial_lines(connection, stop, sound.handle_line)
+        self.launch.assert_called_once()
+        self.assertTrue(any("RX RESET" in line for line in logs.output))
+        self.assertTrue(any("could not start" in line for line in logs.output))
+
+    def test_nonzero_exit_is_logged_and_next_press_can_play(self):
+        sound = PressSound("sound.aiff")
+        sound.handle_line("PRESS child=1 rank=1")
+        self.launch.return_value.poll.return_value = 1
+        with self.assertLogs("bridge", level="WARNING") as logs:
+            sound.handle_line("PRESS child=2 rank=1")
+        self.assertTrue(any("playback failed" in line for line in logs.output))
+        self.assertEqual(self.launch.call_count, 2)
+
+    def test_shutdown_stops_and_reaps_playback(self):
+        sound = PressSound("sound.aiff")
+        sound.handle_line("PRESS child=1 rank=1")
+        sound.close()
+        self.launch.return_value.terminate.assert_called_once()
+        self.launch.return_value.wait.assert_called_once_with(timeout=0.5)
+        self.assertIsNone(sound.process)
 
 
 class FakeSerial:
