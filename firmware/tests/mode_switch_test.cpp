@@ -31,7 +31,7 @@ int main() {
     assert(levels[23] == LOW && levels[16] == LOW);
     const auto firstOnly = buzzer_inputs::poll();
     assert(firstOnly.mode == Mode::FirstOnly && firstOnly.ranking.count == 0);
-    assert(!firstOnly.modeChanged && !firstOnly.resetPressed);
+    assert(!firstOnly.modeChanged && !firstOnly.resetNeeded);
     command('o');
     command('x');
     expect("ERROR no_answerer\nERROR no_answerer\n");

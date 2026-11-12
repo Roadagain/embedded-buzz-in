@@ -22,7 +22,7 @@ struct Ranking {
 
 struct Snapshot {
     Ranking ranking;
-    bool resetPressed;
+    bool resetNeeded;
     Child correctChild = Child::None;
     Child wrongChild = Child::None;
     Mode mode = Mode::EndlessChance;

@@ -114,14 +114,16 @@ Snapshot poll(Command command) {
     const Child correctChild = !buttonPressed && command == Command::Correct && waiting.count > 0
                                    ? waiting.entries[waiting.head].child
                                    : Child::None;
-    const bool resetPressed = buttonPressed || modeChanged || command == Command::Reset ||
-                              correctChild != Child::None;
-    Child wrongChild = Child::None;
-    if (resetPressed) {
+    const Child wrongChild = !buttonPressed && command == Command::Wrong && waiting.count > 0
+                                 ? waiting.entries[waiting.head].child
+                                 : Child::None;
+    const bool resetNeeded = buttonPressed || modeChanged || command == Command::Reset ||
+                              correctChild != Child::None ||
+                              (wrongChild != Child::None && mode == Mode::FirstOnly);
+    if (resetNeeded) {
         waiting = WaitingQueue{};
         resetAtMs = millis();
-    } else if (command == Command::Wrong && waiting.count > 0) {
-        wrongChild = waiting.entries[waiting.head].child;
+    } else if (wrongChild != Child::None) {
         waiting.entries[waiting.head] = Press{};
         waiting.head = (waiting.head + 1) % CHILD_COUNT;
         --waiting.count;
@@ -133,7 +135,7 @@ Snapshot poll(Command command) {
         snapshot.order[i] = waiting.entries[(waiting.head + i) % CHILD_COUNT];
     }
     portEXIT_CRITICAL(&buttonMux);
-    return {snapshot, resetPressed, correctChild, wrongChild, mode, modeChanged};
+    return {snapshot, resetNeeded, correctChild, wrongChild, mode, modeChanged};
 }
 
 }  // 名前空間 buzzer_inputs

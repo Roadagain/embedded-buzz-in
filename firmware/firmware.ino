@@ -57,10 +57,10 @@ void loop() {
         }
         wrongTransition = true;
         wrongAt = now;
-    } else if ((command == Command::Correct || command == Command::Wrong) && !input.resetPressed) {
+    } else if ((command == Command::Correct || command == Command::Wrong) && !input.resetNeeded) {
         Serial.println("ERROR no_answerer");
     }
-    if (input.resetPressed) {
+    if (input.resetNeeded) {
         reportedCount = 0;
         wrongTransition = false;
         Serial.println("RESET");
@@ -76,7 +76,7 @@ void loop() {
     }
 
     const Child first = ranking.order[0].child;
-    const Child second = ranking.order[1].child;
+    const Child second = input.mode == Mode::EndlessChance ? ranking.order[1].child : Child::None;
 
     // 元の2着は点灯を維持し、1秒後に点滅開始・後続の点灯を行う。
     if (wrongTransition && now - wrongAt >= WRONG_TRANSITION_MS) {
