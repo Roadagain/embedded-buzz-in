@@ -36,12 +36,12 @@ class HttpBridgeTests(unittest.TestCase):
             return response.status, response.getheader("Cache-Control"), body
 
     def test_actions_send_exactly_one_byte(self):
-        for path in ("/reset", "/correct", "/wrong"):
+        for path in ("/reset", "/correct", "/wrong", "/toggle-mode"):
             status, cache, body = self.request(path)
             self.assertEqual(status, 202)
             self.assertEqual(cache, "no-store")
             self.assertIn(b"execution is not confirmed", body)
-        self.assertEqual(self.connection.writes, [b"r", b"o", b"x"])
+        self.assertEqual(self.connection.writes, [b"r", b"o", b"x", b"m"])
 
     def test_status_reports_connection_without_sending_commands(self):
         status, cache, body = self.request("/status")
@@ -56,13 +56,50 @@ class HttpBridgeTests(unittest.TestCase):
         self.assertEqual(self.connection.writes, [])
 
     def test_unknown_urls_and_other_methods_do_not_send(self):
-        for path in ("/", "/favicon.ico", "/reset/", "/reset?command=x"):
+        for path in ("/", "/favicon.ico", "/reset/", "/reset?command=x",
+                     "/toggle-mode/", "/toggle-mode?mode=first_only"):
             status, cache, _ = self.request(path)
             self.assertEqual(status, 404)
             self.assertEqual(cache, "no-store")
         self.assertEqual(self.request("/wrong", "POST")[0], 501)
         self.assertEqual(self.request("/wrong", "HEAD")[0], 501)
+        self.assertEqual(self.request("/toggle-mode", "POST")[0], 501)
+        self.assertEqual(self.request("/toggle-mode", "HEAD")[0], 501)
         self.assertEqual(self.connection.writes, [])
+
+    def test_toggle_mode_waits_for_firmware_notification_to_update_mode(self):
+        self.assertEqual(self.request("/toggle-mode")[0], 202)
+        self.assertEqual(json.loads(self.request("/mode")[2]), {"mode": None})
+        self.bridge._handle_line(self.connection, "MODE mode=endless_chance")
+        self.assertEqual(self.request("/toggle-mode")[0], 202)
+        self.assertEqual(json.loads(self.request("/mode")[2]), {"mode": "endless_chance"})
+        self.bridge._handle_line(self.connection, "MODE mode=first_only")
+        self.assertEqual(json.loads(self.request("/mode")[2]), {"mode": "first_only"})
+        self.assertEqual(self.connection.writes, [b"m", b"m"])
+
+    def test_toggle_mode_unavailable_connection_does_not_send(self):
+        self.bridge.available = False
+        status, cache, _ = self.request("/toggle-mode")
+        self.assertEqual(status, 503)
+        self.assertEqual(cache, "no-store")
+        self.bridge.available = True
+        self.connection.is_open = False
+        self.assertEqual(self.request("/toggle-mode")[0], 503)
+        self.assertEqual(self.connection.writes, [])
+
+    def test_toggle_mode_write_failure_is_not_retried(self):
+        self.bridge._handle_line(self.connection, "MODE mode=first_only")
+        self.connection.error = serial.SerialTimeoutException("timeout")
+        self.assertEqual(self.request("/toggle-mode")[0], 503)
+        self.connection.error = None
+        self.assertEqual(self.request("/toggle-mode")[0], 503)
+        self.assertEqual(self.connection.writes, [])
+        self.assertEqual(json.loads(self.request("/mode")[2]), {"mode": None})
+
+    def test_toggle_mode_partial_write_is_not_accepted(self):
+        self.connection.partial = True
+        self.assertEqual(self.request("/toggle-mode")[0], 503)
+        self.assertEqual(self.connection.writes, [b"m"])
 
     def test_mode_reports_latest_notification_without_sending_commands(self):
         for line, mode in ((None, None),

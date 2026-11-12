@@ -6,7 +6,7 @@ from http.server import BaseHTTPRequestHandler
 
 
 LOGGER = logging.getLogger("bridge")
-COMMANDS = {"/reset": b"r", "/correct": b"o", "/wrong": b"x"}
+COMMANDS = {"/reset": b"r", "/correct": b"o", "/wrong": b"x", "/toggle-mode": b"m"}
 
 
 def make_handler(bridge):
