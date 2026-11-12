@@ -20,7 +20,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--port", required=True, help="Serial port, e.g. /dev/cu.usbserial-10")
     parser.add_argument("--http-port", type=int, default=58912, help="Local HTTP port (default: 58912)")
-    parser.add_argument("--press-sound", help="Audio file for first presses and promotions (macOS afplay; default: silent)")
+    parser.add_argument("--press-sound", help="Audio file for BOOT notifications, first presses and promotions (macOS afplay; default: silent)")
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     sound = PressSound(args.press_sound)

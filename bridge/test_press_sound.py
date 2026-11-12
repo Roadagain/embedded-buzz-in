@@ -37,7 +37,7 @@ class PressSoundTests(unittest.TestCase):
 
     def test_only_first_place_press_plays(self):
         sound = PressSound("sound with spaces.aiff")
-        for line in ("BOOT", "RESET", "PRESS child=2 rank=2 elapsed_ms=10",
+        for line in ("RESET", "PRESS child=2 rank=2 elapsed_ms=10",
                      "PRESS child=1 rank=10", "PRESS child=0 rank=1",
                      "JUDGE result=wrong child=1 next_child=0", "ERROR no_answerer"):
             sound.handle_line(line)
@@ -48,6 +48,61 @@ class PressSoundTests(unittest.TestCase):
         self.assertEqual(command[0], "/usr/bin/afplay")
         self.assertTrue(command[1].endswith("/sound with spaces.aiff"))
         self.launch.return_value.wait.assert_not_called()
+
+    def test_boot_plays_once_per_notification(self):
+        sound = PressSound("sound.aiff")
+        sound.handle_line("BOOT")
+        self.launch.assert_called_once()
+        self.launch.return_value.wait.assert_not_called()
+        for line in ("MODE mode=endless_chance", "RESET", "BOOT extra", " BOOT"):
+            sound.handle_line(line)
+        self.launch.assert_called_once()
+        sound.reset()
+        sound.handle_line("BOOT")
+        self.assertEqual(self.launch.call_count, 2)
+
+    def test_boot_sound_is_optional_and_failures_are_logged(self):
+        PressSound(None).handle_line("BOOT")
+        self.launch.assert_not_called()
+        self.launch.side_effect = OSError("player unavailable")
+        with self.assertLogs("bridge", level="WARNING") as logs:
+            PressSound("sound.aiff").handle_line("BOOT")
+        self.assertTrue(any("could not start" in line for line in logs.output))
+
+    def test_boot_restarts_playback_and_cancels_pending_promotion(self):
+        first, second = Mock(), Mock()
+        first.poll.return_value = second.poll.return_value = None
+        self.launch.side_effect = [first, second]
+        sound = PressSound("sound.aiff")
+        sound.handle_line("PRESS child=1 rank=1")
+        sound.handle_line("JUDGE result=wrong child=1 next_child=2")
+        timer, callback, _ = self.timers[-1]
+        sound.handle_line("BOOT")
+        first.terminate.assert_called_once()
+        first.wait.assert_not_called()
+        timer.cancel.assert_called_once()
+        callback()
+        self.assertEqual(self.launch.call_count, 2)
+        self.assertIs(sound.process, second)
+
+    def test_partial_boot_line_plays_only_when_complete(self):
+        sound = PressSound("sound.aiff")
+        stop = threading.Event()
+        connection = Mock(in_waiting=1024)
+        chunks = iter([b"BO", b"", b"OT\r\nMODE mode=endless_chance\n"])
+
+        def read(size):
+            try:
+                chunk = next(chunks)
+                self.launch.assert_not_called()
+                return chunk
+            except StopIteration:
+                stop.set()
+                return b""
+
+        connection.read.side_effect = read
+        log_serial_lines(connection, stop, sound.handle_line)
+        self.launch.assert_called_once()
 
     def test_overlapping_presses_are_not_queued(self):
         sound = PressSound("sound.aiff")
@@ -135,7 +190,7 @@ class PressSoundTests(unittest.TestCase):
         self.assertEqual(self.launch.call_count, 2)
 
     def test_pending_promotion_is_canceled_by_reset_or_shutdown(self):
-        for event in ("RESET", "BOOT", "JUDGE result=correct child=2", "reset", "close"):
+        for event in ("RESET", "JUDGE result=correct child=2", "reset", "close"):
             with self.subTest(event=event):
                 self.launch.reset_mock()
                 sound = PressSound("sound.aiff")

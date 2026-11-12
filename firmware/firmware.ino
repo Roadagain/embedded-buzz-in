@@ -9,6 +9,7 @@ using buzzer_inputs::Mode;
 
 constexpr uint32_t BLINK_HALF_PERIOD_MS = 250;
 constexpr uint32_t WRONG_TRANSITION_MS = 1000;
+constexpr uint32_t STARTUP_LED_ON_MS = 200;
 
 constexpr uint8_t LED_ONE = 23;
 constexpr uint8_t LED_TWO = 16;
@@ -24,8 +25,6 @@ void reportMode(Mode mode) {
 }
 
 void setup() {
-    buzzer_inputs::begin();
-
     pinMode(LED_ONE, OUTPUT);
     pinMode(LED_TWO, OUTPUT);
     digitalWrite(LED_ONE, LOW);
@@ -33,6 +32,16 @@ void setup() {
 
     Serial.begin(115200);
     Serial.println("BOOT");
+
+    // 接続の有無によらず全ポートを順番に点灯する。入力割り込みは終了後に登録する。
+    const uint8_t ledPins[] = {LED_ONE, LED_TWO};
+    for (const uint8_t pin : ledPins) {
+        digitalWrite(pin, HIGH);
+        delay(STARTUP_LED_ON_MS);
+        digitalWrite(pin, LOW);
+    }
+
+    buzzer_inputs::begin();
     reportMode(Mode::EndlessChance);
 }
 

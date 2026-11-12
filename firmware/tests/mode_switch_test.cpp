@@ -19,13 +19,14 @@ void command(char value) { Serial.input.push_back(value); loop(); }
 
 int main() {
     setup();
+    const uint32_t startedAt = testNow;
     expect("BOOT\nMODE mode=endless_chance\n");
-    testNow = 100;
+    testNow = startedAt + 100;
     press(22);
     press(18);
     loop();
     expect("PRESS child=1 rank=1 elapsed_ms=100\nPRESS child=2 rank=2 elapsed_ms=100\n");
-    tick(200);
+    tick(startedAt + 200);
     command('m');  // 改行なしで即実行し、LED・着順を消去する。
     expect("MODE mode=first_only\nRESET\n");
     assert(levels[23] == LOW && levels[16] == LOW);
@@ -36,7 +37,7 @@ int main() {
     command('x');
     expect("ERROR no_answerer\nERROR no_answerer\n");
 
-    testNow = 250;
+    testNow = startedAt + 250;
     press(18);
     loop();
     expect("PRESS child=2 rank=1 elapsed_ms=50\n");
@@ -50,11 +51,11 @@ int main() {
     expect("JUDGE result=correct child=1\nRESET\n");
     assert(buzzer_inputs::poll().mode == Mode::FirstOnly);
 
-    testNow = 300;
+    testNow = startedAt + 300;
     command('m');
     expect("MODE mode=endless_chance\nRESET\n");
     assert(buzzer_inputs::poll().mode == Mode::EndlessChance);
-    testNow = 375;
+    testNow = startedAt + 375;
     press(22);
     press(18);
     loop();
@@ -62,11 +63,11 @@ int main() {
     command('x');
     expect("JUDGE result=wrong child=1 next_child=2\n");
     assert(wrongTransition);
-    tick(400);
+    tick(startedAt + 400);
     command('m');  // 繰り上がり待機も解除する。
     expect("MODE mode=first_only\nRESET\n");
     assert(!wrongTransition && levels[23] == LOW && levels[16] == LOW);
-    tick(1500);
+    tick(startedAt + 1500);
     assert(levels[23] == LOW && levels[16] == LOW);
 
     // 連続コマンドは1文字ずつ順番に処理し、CR・LFは無視する。
@@ -84,7 +85,7 @@ int main() {
 
     // 物理リセットと同時のmも切替・リセットを1回行う。
     press(15);
-    testNow = 1520;
+    testNow = startedAt + 1520;
     command('m');
     expect("MODE mode=endless_chance\nRESET\n");
     assert(buzzer_inputs::poll().mode == Mode::EndlessChance);
