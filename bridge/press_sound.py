@@ -1,4 +1,4 @@
-"""Play sounds for first-place presses and promoted answerers."""
+"""Play sounds for BOOT notifications, first-place presses and promoted answerers."""
 
 import logging
 from pathlib import Path
@@ -15,7 +15,7 @@ WRONG = re.compile(r"JUDGE result=wrong child=[1-9]\d* next_child=(0|[1-9]\d*)")
 
 
 class PressSound:
-    """Play first-place presses and promotions without queuing sounds."""
+    """Play BOOT, first-place and promotion sounds without queuing."""
 
     def __init__(self, filename):
         self.lock = threading.RLock()
@@ -46,9 +46,14 @@ class PressSound:
                 if status != 0:
                     LOGGER.warning("Press sound playback failed (exit status %s)", status)
                 self.process = None
+
         should_play = False
         if line in ("BOOT", "RESET") or line.startswith("JUDGE result=correct child="):
             self._cancel_promotion()
+        if line == "BOOT":
+            # A new boot must sound even if previous playback is still active.
+            self._play(promoted=True)
+            return
         press = PRESS.fullmatch(line)
         wrong = WRONG.fullmatch(line)
         if press is not None:
