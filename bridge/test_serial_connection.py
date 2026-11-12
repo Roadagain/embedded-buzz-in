@@ -111,6 +111,65 @@ class ReconnectionTests(unittest.TestCase):
         self.assertEqual(self.bridge.status()["status"], "disconnected")
         self.assertEqual(self.events, [("disconnected", None)])
 
+    def test_mode_notifications_update_state_and_preserve_callbacks(self):
+        self.assertEqual(self.bridge.input_mode(), {"mode": None})
+        connection = self.connect()
+        self.assertEqual(self.bridge.input_mode(), {"mode": None})
+        connection.incoming.put(b"BOOT\r\nMODE mode=endless_")
+        self.wait_for(lambda: len(self.events) == 1)
+        self.assertEqual(self.bridge.input_mode(), {"mode": None})
+        connection.incoming.put(b"chance\r\n")
+        self.wait_for(lambda: len(self.events) == 2)
+        self.assertEqual(self.bridge.input_mode(), {"mode": "endless_chance"})
+        connection.incoming.put(b"MODE mode=first_only\n")
+        self.wait_for(lambda: len(self.events) == 3)
+        self.assertEqual(self.bridge.input_mode(), {"mode": "first_only"})
+        for line in ("RESET", "MODE mode=unknown", "MODE mode=endless_chance extra",
+                     " MODE mode=endless_chance", "MODE mode=endless_chance "):
+            connection.incoming.put((line + "\n").encode())
+        self.wait_for(lambda: len(self.events) == 8)
+        self.assertEqual(self.bridge.input_mode(), {"mode": "first_only"})
+        self.assertEqual(self.events[:3], [
+            ("line", "BOOT"),
+            ("line", "MODE mode=endless_chance"),
+            ("line", "MODE mode=first_only"),
+        ])
+        connection.incoming.put(b"BOOT\n")
+        self.wait_for(lambda: len(self.events) == 9)
+        self.assertEqual(self.bridge.input_mode(), {"mode": None})
+        self.assertEqual(connection.writes, [])
+
+    def test_mode_is_discarded_on_disconnect_and_reconnect(self):
+        first = self.connect()
+        first.incoming.put(b"MODE mode=first_only\nMODE mode=endless_")
+        self.wait_for(lambda: self.bridge.input_mode()["mode"] == "first_only")
+        first.incoming.put(serial.SerialException("USB removed"))
+        self.assertTrue(first.closed.wait(3))
+        self.assertEqual(self.bridge.input_mode(), {"mode": None})
+        second = self.connect()
+        self.assertEqual(self.bridge.input_mode(), {"mode": None})
+        # 古い接続からの通知や未完了の行は、新しい接続のモードに反映しない。
+        self.bridge._handle_line(first, "MODE mode=first_only")
+        self.assertEqual(self.bridge.input_mode(), {"mode": None})
+        second.incoming.put(b"chance\nMODE mode=endless_chance\n")
+        self.wait_for(lambda: self.events[-1:] == [("line", "MODE mode=endless_chance")])
+        self.assertEqual(self.bridge.input_mode(), {"mode": "endless_chance"})
+        self.assertEqual(self.events[-2:], [
+            ("line", "chance"), ("line", "MODE mode=endless_chance")])
+        self.shutdown()
+        self.assertEqual(self.bridge.input_mode(), {"mode": None})
+
+    def test_write_failure_immediately_invalidates_mode(self):
+        connection = self.connect()
+        connection.incoming.put(b"MODE mode=first_only\n")
+        self.wait_for(lambda: self.bridge.input_mode()["mode"] == "first_only")
+        connection.error = serial.SerialTimeoutException("write timeout")
+        self.assertFalse(self.bridge.send(b"r"))
+        self.assertEqual(self.bridge.input_mode(), {"mode": None})
+        self.assertTrue(connection.closed.wait(3))
+        self.connect()
+        self.assertEqual(self.bridge.input_mode(), {"mode": None})
+
     def test_disconnect_callback_runs_after_port_is_closed(self):
         connection = self.connect()
         observations = []

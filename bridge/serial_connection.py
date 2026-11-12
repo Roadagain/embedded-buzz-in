@@ -11,6 +11,10 @@ READ_TIMEOUT_SECONDS = 0.2
 WRITE_TIMEOUT_SECONDS = 1.0
 RECONNECT_INTERVAL_SECONDS = 1.0
 LOGGER = logging.getLogger("bridge")
+MODE_NOTIFICATIONS = {
+    "MODE mode=endless_chance": "endless_chance",
+    "MODE mode=first_only": "first_only",
+}
 
 
 def log_serial_lines(connection, stop, on_line=None, disconnected=None):
@@ -44,11 +48,28 @@ class SerialBridge:
         self.lock = threading.Lock()
         self.available = False
         self.disconnected = threading.Event()
+        self._mode = None
 
     def status(self):
         with self.lock:
             connected = self.available and self.connection is not None and self.connection.is_open
             return {"status": "connected" if connected else "disconnected", "port": self.port}
+
+    def input_mode(self):
+        with self.lock:
+            connected = self.available and self.connection is not None and self.connection.is_open
+            return {"mode": self._mode if connected else None}
+
+    def _handle_line(self, connection, line):
+        with self.lock:
+            if connection is not self.connection or not self.available or not connection.is_open:
+                return
+            if line == "BOOT":
+                self._mode = None
+            elif line in MODE_NOTIFICATIONS:
+                self._mode = MODE_NOTIFICATIONS[line]
+        if self.on_line is not None:
+            self.on_line(line)
 
     def send(self, command):
         # A request waiting for the write lock must not move to a new USB session.
@@ -62,6 +83,7 @@ class SerialBridge:
                     raise serial.SerialTimeoutException("Incomplete serial write")
             except (serial.SerialException, OSError) as error:
                 self.available = False
+                self._mode = None
                 self.disconnected.set()
                 LOGGER.error("Serial write failed: %s", error)
                 return False
@@ -87,14 +109,17 @@ class SerialBridge:
                         return
                     self.disconnected.clear()
                     self.connection = connection
+                    self._mode = None
                     self.available = True
                 LOGGER.info("Connected to %s at %s bps", self.port, BAUD_RATE)
-                log_serial_lines(connection, stop, self.on_line, self.disconnected)
+                log_serial_lines(connection, stop,
+                                 lambda line: self._handle_line(connection, line), self.disconnected)
             except (serial.SerialException, OSError) as error:
                 LOGGER.warning("Serial read failed; reconnecting: %s", error)
             finally:
                 with self.lock:
                     self.available = False
+                    self._mode = None
                     self.connection = None
                     self.disconnected.set()
                     try:

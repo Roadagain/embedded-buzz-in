@@ -6,7 +6,7 @@ from http.server import BaseHTTPRequestHandler
 
 
 LOGGER = logging.getLogger("bridge")
-COMMANDS = {"/reset": b"r", "/correct": b"o", "/wrong": b"x"}
+COMMANDS = {"/reset": b"r", "/correct": b"o", "/wrong": b"x", "/toggle-mode": b"m"}
 
 
 def make_handler(bridge):
@@ -18,6 +18,10 @@ def make_handler(bridge):
         def do_GET(self):
             if self.path == "/status":
                 body = (json.dumps(bridge.status()) + "\n").encode("utf-8")
+                self.respond(200, body, "application/json; charset=utf-8")
+                return
+            if self.path == "/mode":
+                body = (json.dumps(bridge.input_mode()) + "\n").encode("utf-8")
                 self.respond(200, body, "application/json; charset=utf-8")
                 return
             command = COMMANDS.get(self.path)

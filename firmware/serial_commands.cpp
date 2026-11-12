@@ -19,6 +19,8 @@ buzzer_inputs::Command poll() {
             return Command::Correct;
         case 'x':
             return Command::Wrong;
+        case 'm':
+            return Command::ToggleMode;
         default:
             Serial.println("ERROR unknown_command");
             return Command::None;

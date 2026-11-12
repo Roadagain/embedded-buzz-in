@@ -16,6 +16,7 @@ struct WaitingQueue {
 
 WaitingQueue waiting;
 uint32_t resetAtMs = 0;
+Mode mode = Mode::EndlessChance;
 
 class Button {
 public:
@@ -105,17 +106,24 @@ Snapshot poll(Command command) {
     // 判定・リセット・着順の読み取りを、子機の割り込みと競合しないように行う。
     portENTER_CRITICAL(&buttonMux);
     const bool buttonPressed = resetButton.takePress();
+    const bool modeChanged = command == Command::ToggleMode;
+    if (modeChanged) {
+        mode = mode == Mode::EndlessChance ? Mode::FirstOnly : Mode::EndlessChance;
+    }
     // 物理リセットを優先し、判定対象の確定と着順の更新を同じ排他区間で行う。
     const Child correctChild = !buttonPressed && command == Command::Correct && waiting.count > 0
                                    ? waiting.entries[waiting.head].child
                                    : Child::None;
-    const bool resetPressed = buttonPressed || command == Command::Reset || correctChild != Child::None;
-    Child wrongChild = Child::None;
-    if (resetPressed) {
+    const Child wrongChild = !buttonPressed && command == Command::Wrong && waiting.count > 0
+                                 ? waiting.entries[waiting.head].child
+                                 : Child::None;
+    const bool resetNeeded = buttonPressed || modeChanged || command == Command::Reset ||
+                              correctChild != Child::None ||
+                              (wrongChild != Child::None && mode == Mode::FirstOnly);
+    if (resetNeeded) {
         waiting = WaitingQueue{};
         resetAtMs = millis();
-    } else if (command == Command::Wrong && waiting.count > 0) {
-        wrongChild = waiting.entries[waiting.head].child;
+    } else if (wrongChild != Child::None) {
         waiting.entries[waiting.head] = Press{};
         waiting.head = (waiting.head + 1) % CHILD_COUNT;
         --waiting.count;
@@ -127,7 +135,7 @@ Snapshot poll(Command command) {
         snapshot.order[i] = waiting.entries[(waiting.head + i) % CHILD_COUNT];
     }
     portEXIT_CRITICAL(&buttonMux);
-    return {snapshot, resetPressed, correctChild, wrongChild};
+    return {snapshot, resetNeeded, correctChild, wrongChild, mode, modeChanged};
 }
 
 }  // 名前空間 buzzer_inputs
