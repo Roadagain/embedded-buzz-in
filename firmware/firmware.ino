@@ -5,6 +5,7 @@
 
 using buzzer_inputs::Child;
 using buzzer_inputs::Command;
+using buzzer_inputs::Mode;
 
 constexpr uint32_t BLINK_HALF_PERIOD_MS = 250;
 constexpr uint32_t WRONG_TRANSITION_MS = 1000;
@@ -18,6 +19,10 @@ bool wrongTransition = false;
 uint32_t wrongAt = 0;
 Child promotedChild = Child::None;
 
+void reportMode(Mode mode) {
+    Serial.printf("MODE mode=%s\n", mode == Mode::EndlessChance ? "endless_chance" : "first_only");
+}
+
 void setup() {
     buzzer_inputs::begin();
 
@@ -28,6 +33,7 @@ void setup() {
 
     Serial.begin(115200);
     Serial.println("BOOT");
+    reportMode(Mode::EndlessChance);
 }
 
 void loop() {
@@ -35,6 +41,9 @@ void loop() {
     const auto input = buzzer_inputs::poll(command);
     const auto& ranking = input.ranking;
     const uint32_t now = millis();
+    if (input.modeChanged) {
+        reportMode(input.mode);
+    }
     if (input.correctChild != Child::None) {
         Serial.printf("JUDGE result=correct child=%u\n", static_cast<unsigned>(input.correctChild));
     } else if (input.wrongChild != Child::None) {

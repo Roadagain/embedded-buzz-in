@@ -5,7 +5,8 @@
 namespace buzzer_inputs {
 
 enum class Child : uint8_t { None = 0, One = 1, Two = 2 };
-enum class Command : uint8_t { None, Reset, Correct, Wrong };
+enum class Command : uint8_t { None, Reset, Correct, Wrong, ToggleMode };
+enum class Mode : uint8_t { EndlessChance, FirstOnly };
 
 constexpr uint8_t CHILD_COUNT = 2;
 
@@ -24,6 +25,8 @@ struct Snapshot {
     bool resetPressed;
     Child correctChild = Child::None;
     Child wrongChild = Child::None;
+    Mode mode = Mode::EndlessChance;
+    bool modeChanged = false;
 };
 
 void begin();
