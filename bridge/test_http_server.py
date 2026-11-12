@@ -64,6 +64,36 @@ class HttpBridgeTests(unittest.TestCase):
         self.assertEqual(self.request("/wrong", "HEAD")[0], 501)
         self.assertEqual(self.connection.writes, [])
 
+    def test_mode_reports_latest_notification_without_sending_commands(self):
+        for line, mode in ((None, None),
+                           ("MODE mode=endless_chance", "endless_chance"),
+                           ("MODE mode=first_only", "first_only"),
+                           ("RESET", "first_only"),
+                           ("BOOT", None)):
+            if line is not None:
+                self.bridge._handle_line(self.connection, line)
+            status, cache, body = self.request("/mode")
+            self.assertEqual(status, 200)
+            self.assertEqual(cache, "no-store")
+            self.assertEqual(json.loads(body), {"mode": mode})
+        self.assertEqual(self.connection.writes, [])
+
+    def test_mode_is_unknown_when_disconnected(self):
+        self.bridge._handle_line(self.connection, "MODE mode=first_only")
+        self.bridge.available = False
+        self.assertEqual(self.request("/mode")[0], 200)
+        self.assertEqual(json.loads(self.request("/mode")[2]), {"mode": None})
+        self.bridge.available = True
+        self.connection.is_open = False
+        self.assertEqual(json.loads(self.request("/mode")[2]), {"mode": None})
+        self.assertEqual(self.connection.writes, [])
+
+    def test_mode_rejects_other_urls_and_methods(self):
+        for path in ("/mode/", "/mode?refresh=1"):
+            self.assertEqual(self.request(path)[0], 404)
+        self.assertEqual(self.request("/mode", "POST")[0], 501)
+        self.assertEqual(self.connection.writes, [])
+
     def test_unavailable_connection_returns_503(self):
         self.connection.is_open = False
         status, cache, _ = self.request("/reset")

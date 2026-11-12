@@ -20,6 +20,10 @@ def make_handler(bridge):
                 body = (json.dumps(bridge.status()) + "\n").encode("utf-8")
                 self.respond(200, body, "application/json; charset=utf-8")
                 return
+            if self.path == "/mode":
+                body = (json.dumps(bridge.input_mode()) + "\n").encode("utf-8")
+                self.respond(200, body, "application/json; charset=utf-8")
+                return
             command = COMMANDS.get(self.path)
             if command is None:
                 self.send_error(404, "Unknown action")
