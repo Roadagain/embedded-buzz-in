@@ -26,27 +26,28 @@ void expectEmpty(Mode mode) {
 
 int main() {
     setup();
+    const uint32_t startedAt = testNow;
     expect("BOOT\nMODE mode=endless_chance\n");
     // エンドレスチャンスの不正解では繰り上げ、経過時間の起点を維持する。
-    testNow = 100;
+    testNow = startedAt + 100;
     press(22);
     press(18);
     loop();
     expect("PRESS child=1 rank=1 elapsed_ms=100\nPRESS child=2 rank=2 elapsed_ms=100\n");
     assert(levels[23] == HIGH && levels[16] == HIGH);
-    tick(350);
+    tick(startedAt + 350);
     assert(levels[23] == LOW && levels[16] == HIGH);
     command('x');
     expect("JUDGE result=wrong child=1 next_child=2\n");
     assert(levels[23] == LOW && levels[16] == HIGH);
-    testNow = 400;
+    testNow = startedAt + 400;
     press(22);
     loop();
     expect("PRESS child=1 rank=2 elapsed_ms=400\n");
     assert(levels[23] == LOW && levels[16] == HIGH);
-    tick(1350);
+    tick(startedAt + 1350);
     assert(levels[23] == HIGH && levels[16] == HIGH);
-    tick(1600);
+    tick(startedAt + 1600);
     assert(levels[23] == HIGH && levels[16] == LOW);
     command('o');
     expect("JUDGE result=correct child=2\nRESET\n");

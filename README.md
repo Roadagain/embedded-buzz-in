@@ -32,6 +32,14 @@ arduino-cli compile --fqbn esp32:esp32:esp32 firmware
 arduino-cli upload --fqbn esp32:esp32:esp32 --port PORT firmware
 ```
 
+### 起動時の点灯チェック
+
+起動時は子機1、子機2の順にLEDを200 msずつ点灯し、全消灯してから通常の入力受付を開始します。接続状態の検知は行わず、未接続ポートも同じ時間だけ駆動するため、チェック時間は合計約400 msです。点灯時間は `firmware/firmware.ino` の `STARTUP_LED_ON_MS` で調整できます。
+
+チェック中の子機・物理リセットボタンの押下は記録しません。押したままチェックが終了した場合は、一度離してから押し直してください。`PRESS` の経過時間はチェック終了後の入力受付開始を起点にします。シリアル出力はチェック前に `BOOT`、終了後に `MODE mode=endless_chance` を出力します。チェック中に受信したシリアルコマンドは、受信バッファに残っていれば終了後に処理します。通常のリセット・正解・不正解・モード切替では、この点灯チェックは繰り返しません。
+
+実機では、電源を切って子機を接続してから起動し、子機1 → 子機2 → 全消灯の順になることを確認してください。片側のみ接続した場合も接続先の順番で点灯し、未接続ポートの分は待ち時間になります。
+
 ### 入力受付モード
 
 起動時はエンドレスチャンスモードです。シリアルコマンド `m` を送るたびに、エンドレスチャンスと1着のみを切り替えます。切替時は着順・LED・経過時間の起点をリセットし、繰り上がり待機も解除します。リセット・正解・不正解ではモードは変わりません。
@@ -83,10 +91,10 @@ RESET
 
 ### ファームウェアの自動テスト
 
-リポジトリのルートで、C++17対応のコンパイラを使って実行します。GPIO・時刻・シリアルを模擬し、モード切替、リセット、両モードのLED・正誤判定を確認します。ESP32実機は使用しません。
+リポジトリのルートで、C++17対応のコンパイラを使って実行します。GPIO・時刻・シリアルを模擬し、起動時の点灯順序・入力受付開始、モード切替、リセット、両モードのLED・正誤判定を確認します。ESP32実機は使用しません。
 
 ```sh
-for test in mode_switch mode_judgment; do
+for test in startup_check mode_switch mode_judgment; do
   c++ -std=c++17 -Wall -Wextra -Werror -Ifirmware/tests \
     "firmware/tests/${test}_test.cpp" firmware/buzzer_inputs.cpp firmware/serial_commands.cpp \
     -o "/tmp/embedded-buzz-in-${test}-test" && \

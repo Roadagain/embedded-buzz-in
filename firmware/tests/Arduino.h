@@ -23,6 +23,11 @@ inline int levels[40]{};
 inline void (*interrupts[40])(void*){};
 inline void* contexts[40]{};
 inline uint32_t millis() { return testNow; }
+inline void (*onTestDelay)(uint32_t) = nullptr;
+inline void delay(uint32_t duration) {
+    if (onTestDelay) onTestDelay(duration);
+    testNow += duration;
+}
 inline void pinMode(uint8_t pin, int mode) {
     if (mode == INPUT_PULLUP) levels[pin] = HIGH;
 }
