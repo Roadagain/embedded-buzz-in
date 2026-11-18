@@ -11,9 +11,9 @@ void expect(const std::string& output) {
     Serial.output.clear();
 }
 void press(uint8_t pin) {
-    levels[pin] = LOW;
-    interrupts[pin](contexts[pin]);
+    setInputLevel(pin, LOW);
 }
+void release(uint8_t pin) { setInputLevel(pin, HIGH); }
 void tick(uint32_t now) { testNow = now; loop(); }
 void command(char value) { Serial.input.push_back(value); loop(); }
 
@@ -26,6 +26,8 @@ int main() {
     press(18);
     loop();
     expect("PRESS child=1 rank=1 elapsed_ms=100\nPRESS child=2 rank=2 elapsed_ms=100\n");
+    release(22);
+    release(18);
     tick(startedAt + 200);
     command('m');  // 改行なしで即実行し、LED・着順を消去する。
     expect("MODE mode=first_only\nRESET\n");
@@ -41,12 +43,14 @@ int main() {
     press(18);
     loop();
     expect("PRESS child=2 rank=1 elapsed_ms=50\n");
+    release(18);
     command('r');
     expect("RESET\n");
     assert(buzzer_inputs::poll().mode == Mode::FirstOnly);
     press(22);
     loop();
     expect("PRESS child=1 rank=1 elapsed_ms=0\n");
+    release(22);
     command('o');
     expect("JUDGE result=correct child=1\nRESET\n");
     assert(buzzer_inputs::poll().mode == Mode::FirstOnly);
@@ -60,6 +64,8 @@ int main() {
     press(18);
     loop();
     expect("PRESS child=1 rank=1 elapsed_ms=75\nPRESS child=2 rank=2 elapsed_ms=75\n");
+    release(22);
+    release(18);
     command('x');
     expect("JUDGE result=wrong child=1 next_child=2\n");
     assert(wrongTransition);

@@ -24,13 +24,34 @@ public:
 
     void begin() {
         pinMode(pin_, INPUT_PULLUP);
-        attachInterruptArg(pin_, onFalling, this, FALLING);
+        ready_ = digitalRead(pin_) == HIGH;
+        released_ = false;
+        attachInterruptArg(pin_, onChange, this, CHANGE);
     }
 
 private:
-    static void ARDUINO_ISR_ATTR onFalling(void* context) {
+    static constexpr uint32_t RELEASE_STABLE_MS = 20;
+
+    static void ARDUINO_ISR_ATTR onChange(void* context) {
         auto& button = *static_cast<Button*>(context);
         portENTER_CRITICAL_ISR(&buttonMux);
+        const uint32_t now = millis();
+        if (digitalRead(button.pin_) == HIGH) {
+            button.released_ = true;
+            button.releasedAtMs_ = now;
+            portEXIT_CRITICAL_ISR(&buttonMux);
+            return;
+        }
+        // 次の立ち下がりで解放時間を確認する。loop()の実行間隔に依存させない。
+        const bool ready = button.ready_ ||
+                           (button.released_ &&
+                            static_cast<uint32_t>(now - button.releasedAtMs_) >= RELEASE_STABLE_MS);
+        button.ready_ = false;
+        button.released_ = false;
+        if (!ready) {
+            portEXIT_CRITICAL_ISR(&buttonMux);
+            return;
+        }
         // 回答待ちにいる子機の連打は無視し、不正解で外れた子機は再参加できる。
         bool alreadyWaiting = false;
         for (uint8_t i = 0; i < waiting.count; ++i) {
@@ -43,7 +64,7 @@ private:
         if (waiting.count < CHILD_COUNT && !alreadyWaiting) {
             auto& press = waiting.entries[waiting.tail];
             press.child = button.child_;
-            press.elapsedMs = static_cast<uint32_t>(millis()) - resetAtMs;
+            press.elapsedMs = now - resetAtMs;
             waiting.tail = (waiting.tail + 1) % CHILD_COUNT;
             ++waiting.count;
         }
@@ -52,6 +73,10 @@ private:
 
     const uint8_t pin_;
     const Child child_;
+    // 着順の消去・不正解では初期化せず、物理的な解放確認を維持する。
+    bool ready_ = false;
+    bool released_ = false;
+    uint32_t releasedAtMs_ = 0;
 };
 
 class ResetButton {
