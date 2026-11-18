@@ -89,12 +89,14 @@ RESET
 
 ボタンの押下はGPIOの立ち下がり割り込みで検出します。子機の着順は、割り込み処理が呼ばれた順に記録します。回答待ちにいる子機の追加押下は無視します。リセットボタンは、最後の立ち下がりから20 ms経過した時点で入力がLOWなら確定し、記録済みの着順を消去します。
 
+子機ボタンは、押下後に離された状態（HIGH）が20 ms以上続くまで次の押下を受け付けません。解放確認中にLOWへ戻った場合は確認をやり直します。不正解・正解・リセット・モード切替でも、この制限を維持します。起動時から押されている子機も一度離す必要があります。最初の押下は待ち時間なしで記録し、立ち上がり・立ち下がりのCHANGE割り込みで解放時間を追跡します。確認時間は `firmware/buzzer_inputs.cpp` の `RELEASE_STABLE_MS` で調整できます。この処理は、解放確認後に入るノイズによる誤押下を防ぐものではありません。
+
 ### ファームウェアの自動テスト
 
-リポジトリのルートで、C++17対応のコンパイラを使って実行します。GPIO・時刻・シリアルを模擬し、起動時の点灯順序・入力受付開始、モード切替、リセット、両モードのLED・正誤判定を確認します。ESP32実機は使用しません。
+リポジトリのルートで、C++17対応のコンパイラを使って実行します。GPIO・時刻・シリアルを模擬し、起動時の点灯順序・入力受付開始、モード切替、リセット、両モードのLED・正誤判定、子機ボタンの解放確認を確認します。ESP32実機は使用しません。
 
 ```sh
-for test in startup_check mode_switch mode_judgment; do
+for test in startup_check mode_switch mode_judgment button_release; do
   c++ -std=c++17 -Wall -Wextra -Werror -Ifirmware/tests \
     "firmware/tests/${test}_test.cpp" firmware/buzzer_inputs.cpp firmware/serial_commands.cpp \
     -o "/tmp/embedded-buzz-in-${test}-test" && \

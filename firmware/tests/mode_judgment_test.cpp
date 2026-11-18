@@ -11,10 +11,9 @@ void expect(const std::string& output) {
     Serial.output.clear();
 }
 void press(uint8_t pin) {
-    levels[pin] = HIGH;
-    levels[pin] = LOW;
-    interrupts[pin](contexts[pin]);
+    setInputLevel(pin, LOW);
 }
+void release(uint8_t pin) { setInputLevel(pin, HIGH); }
 void tick(uint32_t now) { testNow = now; loop(); }
 void command(char value) { Serial.input.push_back(value); loop(); }
 void expectEmpty(Mode mode) {
@@ -35,6 +34,8 @@ int main() {
     loop();
     expect("PRESS child=1 rank=1 elapsed_ms=100\nPRESS child=2 rank=2 elapsed_ms=100\n");
     assert(levels[23] == HIGH && levels[16] == HIGH);
+    release(22);
+    release(18);
     tick(startedAt + 350);
     assert(levels[23] == LOW && levels[16] == HIGH);
     command('x');
@@ -44,6 +45,7 @@ int main() {
     press(22);
     loop();
     expect("PRESS child=1 rank=2 elapsed_ms=400\n");
+    release(22);
     assert(levels[23] == LOW && levels[16] == HIGH);
     tick(startedAt + 1350);
     assert(levels[23] == HIGH && levels[16] == HIGH);
@@ -70,6 +72,8 @@ int main() {
         expect("PRESS child=" + first + " rank=1 elapsed_ms=100\nPRESS child=" + second +
                " rank=2 elapsed_ms=100\n");
         assert(levels[firstLed] == HIGH && levels[secondLed] == LOW);
+        release(firstPin);
+        release(secondPin);
         tick(testNow + 250);
         assert(levels[firstLed] == LOW && levels[secondLed] == LOW);
         command('x');
@@ -82,6 +86,7 @@ int main() {
         press(secondPin);
         loop();
         expect("PRESS child=" + second + " rank=1 elapsed_ms=50\n");
+        release(secondPin);
         assert(levels[secondLed] == HIGH && levels[firstLed] == LOW);
         command('o');
         expect("JUDGE result=correct child=" + second + "\nRESET\n");
@@ -92,6 +97,7 @@ int main() {
     press(22);
     loop();
     expect("PRESS child=1 rank=1 elapsed_ms=100\n");
+    release(22);
     command('x');
     expect("JUDGE result=wrong child=1 next_child=0\nRESET\n");
     expectEmpty(Mode::FirstOnly);

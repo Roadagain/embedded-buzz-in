@@ -30,8 +30,7 @@ int main() {
     assert(buzzer_inputs::poll().ranking.count == 0);
 
     testNow += 75;
-    levels[18] = LOW;
-    interrupts[18](contexts[18]);
+    setInputLevel(18, LOW);
     loop();
     assert(Serial.output == "PRESS child=2 rank=1 elapsed_ms=75\n");
     assert(levels[23] == LOW && levels[16] == HIGH);
