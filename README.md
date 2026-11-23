@@ -9,25 +9,42 @@ PC上のHTTP中継プログラムを使うと、Stream DeckからUSBシリアル
 
 ## 子機2台の構成
 
-親機は ESP32-DevKitC V4（ESP32-WROOM-32）を使用します。PCとは USB で接続し、試作機への給電とスケッチの書き込みに使います。子機はそれぞれ、3.5 mm TRS（3極）ジャック、モーメンタリの常開スイッチ、赤色LEDで構成します。
+親機は ESP32-DevKitC V4（ESP32-WROOM-32）と Adafruit AW9523 GPIO Expander and LED Driver を使用します。PCとは USB で接続し、試作機への給電とスケッチの書き込みに使います。子機はそれぞれ、3.5 mm TRRS（4極）ジャック、モーメンタリの常開スイッチ、赤色LED、330 Ω抵抗で構成します。AW9523は通常のGPIO出力としてLEDを駆動し、定電流モードは使用しません。
 
 ### 配線
 
-親機と各子機を3極のストレートケーブルで1対1に接続します。ジャックの端子はプラグとの導通で特定してください。配線とケーブルの抜き差しは親機の電源を切った状態で行います。
+親機と各子機を4極のストレートケーブルで1対1に接続します。ジャックの端子はプラグとの導通で特定してください。配線とケーブルの抜き差しは親機の電源を切った状態で行います。
 
-| TRS端子 | 親機・子機1ポート | 親機・子機2ポート | 各子機側 |
+| TRRS端子 | 親機・子機1ポート | 親機・子機2ポート | 各子機側 |
 | --- | --- | --- | --- |
-| Tip（先端） | GPIO22 | GPIO18 | スイッチの片端 |
-| Ring（中央） | GPIO23 → 330 Ω抵抗 | GPIO16 → 330 Ω抵抗 | LEDのアノード |
-| Sleeve（根元） | GND | GND | スイッチのもう片端とLEDのカソード |
+| Tip（先端） | GPIO32 | GPIO33 | スイッチの片端 |
+| Ring 1 | AW9523の0 | AW9523の1 | LEDのアノード（＋） |
+| Ring 2 | 未接続（将来の導通確認用） | 未接続（将来の導通確認用） | 今回は未接続 |
+| Sleeve（根元） | GND | GND | スイッチのもう片端・330 Ω抵抗経由でLEDのカソード（−） |
 
-330 Ω抵抗は、親機側でGPIOとRingの間にポートごとに1本入れます。親機のリセットボタンは常開スイッチを GPIO15 と GND の間に接続します。スイッチ入力には ESP32 の内部プルアップを使用します。ピンの位置は [ESP32-DevKitC V4 のピン配置](https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32/esp32-devkitc/user_guide.html) を参照してください。
+330 Ω抵抗は子機側に各1本、`LEDカソード → 330 Ω → Sleeve` の順に入れます。スイッチのGNDはこの抵抗を通さずSleeveへ直結します。抵抗はLEDの電流制限用で、親機から子機内抵抗までの配線が短絡した場合の出力電流は制限しません。LEDの定格・実測電流・明るさを確認してください。従来のGPIO23/16からのLED配線は外します。導通確認の配線と処理は今回追加していません。
+
+AW9523は親機内で次のように接続します。
+
+| ESP32 | AW9523 |
+| --- | --- |
+| 3V3 | VIN |
+| GND | GND |
+| GPIO25 | SDA |
+| GPIO26 | SCL |
+
+3V3・GND・GPIO25・GPIO26・GPIO32・GPIO33・GPIO27はすべてESP32-DevKitC V4の3V3側ヘッダー（J2）にあります。GNDは同じ列のIO12とIO13の間にある端子を使えます。I²Cは `Wire.begin(25, 26)` で初期化します。以前のSDA=GPIO21・SCL=GPIO19、子機ボタン=GPIO22/18、リセット=GPIO15から配線を変更した後は、更新したファームウェアを再度書き込んでください。
+
+AW9523のA0/A1ジャンパーは開放し、アドレスは既定の `0x58` を使います。出力0/1だけを通常GPIO・プッシュプル出力にし、HIGHで点灯、LOWで消灯します。残りのAW9523ピンは入力のままです。設定は `firmware/led_outputs.cpp` を参照してください。
+
+親機のリセットボタンは常開スイッチを GPIO27 と GND の間に接続します。子機1のボタンはGPIO32、子機2はGPIO33とGNDの間に接続します。スイッチ入力には ESP32 の内部プルアップを使用します。ピンの位置は [ESP32-DevKitC V4 のピン配置](https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32/esp32-devkitc/user_guide.html) を参照してください。
 
 ### 書き込み
 
-Arduino IDE で `firmware/firmware.ino` を開き、ESP32 Arduino コアの **ESP32 Dev Module** と親機のシリアルポートを選びます。Arduino CLI でも実行できます。`PORT` は `arduino-cli board list` で確認したポートに置き換えてください。
+Arduino IDEのライブラリマネージャーで **Adafruit AW9523** と **Adafruit BusIO** をインストールします。`firmware/firmware.ino` を開き、ESP32 Arduino コアの **ESP32 Dev Module** と親機のシリアルポートを選びます。Arduino CLI でも実行できます。`PORT` は `arduino-cli board list` で確認したポートに置き換えてください。
 
 ```sh
+arduino-cli lib install "Adafruit AW9523" "Adafruit BusIO"
 arduino-cli compile --fqbn esp32:esp32:esp32 firmware
 arduino-cli upload --fqbn esp32:esp32:esp32 --port PORT firmware
 ```
@@ -35,6 +52,8 @@ arduino-cli upload --fqbn esp32:esp32:esp32 --port PORT firmware
 ### 起動時の点灯チェック
 
 起動時は子機1、子機2の順にLEDを200 msずつ点灯し、全消灯してから通常の入力受付を開始します。接続状態の検知は行わず、未接続ポートも同じ時間だけ駆動するため、チェック時間は合計約400 msです。点灯時間は `firmware/firmware.ino` の `STARTUP_LED_ON_MS` で調整できます。
+
+AW9523の初期化に失敗すると `BOOT` に続けて `ERROR led_init_failed` を、点灯チェック中の書き込み失敗では `ERROR led_startup_failed` を出力し、入力受付を開始しません。配線と電源を確認して親機を再起動してください。運用中の書き込み失敗では `ERROR led_write_failed` を連続した失敗につき1回出力し、以降のloopで現在の表示状態を再送します。ボタン入力は継続します。通信断中は消灯できず表示が残る可能性があります。
 
 チェック中の子機・物理リセットボタンの押下は記録しません。押したままチェックが終了した場合は、一度離してから押し直してください。`PRESS` の経過時間はチェック終了後の入力受付開始を起点にします。シリアル出力はチェック前に `BOOT`、終了後に `MODE mode=endless_chance` を出力します。チェック中に受信したシリアルコマンドは、受信バッファに残っていれば終了後に処理します。通常のリセット・正解・不正解・モード切替では、この点灯チェックは繰り返しません。
 
@@ -93,12 +112,12 @@ RESET
 
 ### ファームウェアの自動テスト
 
-リポジトリのルートで、C++17対応のコンパイラを使って実行します。GPIO・時刻・シリアルを模擬し、起動時の点灯順序・入力受付開始、モード切替、リセット、両モードのLED・正誤判定、子機ボタンの解放確認を確認します。ESP32実機は使用しません。
+リポジトリのルートで、C++17対応のコンパイラを使って実行します。GPIO・I²Cドライバ・時刻・シリアルを模擬し、起動時の点灯順序・入力受付開始、モード切替、リセット、両モードのLED・正誤判定、子機ボタンの解放確認、AW9523の初期化失敗・書き込み失敗と再送を確認します。ESP32実機は使用しません。
 
 ```sh
-for test in startup_check mode_switch mode_judgment button_release; do
+for test in startup_check mode_switch mode_judgment button_release led_outputs; do
   c++ -std=c++17 -Wall -Wextra -Werror -Ifirmware/tests \
-    "firmware/tests/${test}_test.cpp" firmware/buzzer_inputs.cpp firmware/serial_commands.cpp \
+    "firmware/tests/${test}_test.cpp" firmware/buzzer_inputs.cpp firmware/serial_commands.cpp firmware/led_outputs.cpp \
     -o "/tmp/embedded-buzz-in-${test}-test" && \
     "/tmp/embedded-buzz-in-${test}-test"
 done

@@ -1,6 +1,7 @@
 #include <Arduino.h>
 
 #include "buzzer_inputs.h"
+#include "led_outputs.h"
 #include "serial_commands.h"
 
 using buzzer_inputs::Child;
@@ -11,8 +12,8 @@ constexpr uint32_t BLINK_HALF_PERIOD_MS = 250;
 constexpr uint32_t WRONG_TRANSITION_MS = 1000;
 constexpr uint32_t STARTUP_LED_ON_MS = 200;
 
-constexpr uint8_t LED_ONE = 23;
-constexpr uint8_t LED_TWO = 16;
+bool inputsReady = false;
+bool ledWriteError = false;
 
 uint8_t reportedCount = 0;
 uint32_t firstPressedAt = 0;
@@ -25,27 +26,36 @@ void reportMode(Mode mode) {
 }
 
 void setup() {
-    pinMode(LED_ONE, OUTPUT);
-    pinMode(LED_TWO, OUTPUT);
-    digitalWrite(LED_ONE, LOW);
-    digitalWrite(LED_TWO, LOW);
-
     Serial.begin(115200);
     Serial.println("BOOT");
+    if (!led_outputs::begin()) {
+        Serial.println("ERROR led_init_failed");
+        return;
+    }
 
     // 接続の有無によらず全ポートを順番に点灯する。入力割り込みは終了後に登録する。
-    const uint8_t ledPins[] = {LED_ONE, LED_TWO};
-    for (const uint8_t pin : ledPins) {
-        digitalWrite(pin, HIGH);
+    for (uint8_t child = 0; child < 2; ++child) {
+        if (!led_outputs::set(child == 0, child == 1)) {
+            Serial.println("ERROR led_startup_failed");
+            return;
+        }
         delay(STARTUP_LED_ON_MS);
-        digitalWrite(pin, LOW);
+        if (!led_outputs::set(false, false)) {
+            Serial.println("ERROR led_startup_failed");
+            return;
+        }
     }
 
     buzzer_inputs::begin();
+    inputsReady = true;
     reportMode(Mode::EndlessChance);
 }
 
 void loop() {
+    if (!inputsReady) {
+        delay(10);
+        return;
+    }
     const Command command = serial_commands::poll();
     const auto input = buzzer_inputs::poll(command);
     const auto& ranking = input.ranking;
@@ -93,8 +103,14 @@ void loop() {
         firstPressedAt = wrongAt + WRONG_TRANSITION_MS;
     }
     const bool blinkOn = ((now - firstPressedAt) / BLINK_HALF_PERIOD_MS) % 2 == 0;
-    digitalWrite(LED_ONE, wrongTransition ? promotedChild == Child::One
-                                          : (first == Child::One && blinkOn) || second == Child::One);
-    digitalWrite(LED_TWO, wrongTransition ? promotedChild == Child::Two
-                                          : (first == Child::Two && blinkOn) || second == Child::Two);
+    const bool oneOn = wrongTransition ? promotedChild == Child::One
+                                      : (first == Child::One && blinkOn) || second == Child::One;
+    const bool twoOn = wrongTransition ? promotedChild == Child::Two
+                                      : (first == Child::Two && blinkOn) || second == Child::Two;
+    if (!led_outputs::set(oneOn, twoOn)) {
+        if (!ledWriteError) Serial.println("ERROR led_write_failed");
+        ledWriteError = true;
+    } else {
+        ledWriteError = false;
+    }
 }

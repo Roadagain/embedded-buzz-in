@@ -1,6 +1,7 @@
 #include <cassert>
 #include <iostream>
 
+#include "Adafruit_AW9523.h"
 #include "../firmware.ino"
 
 void expect(const std::string& output) {
@@ -22,16 +23,16 @@ int main() {
     const uint32_t startedAt = testNow;
     expect("BOOT\nMODE mode=endless_chance\n");
     testNow = startedAt + 100;
-    press(22);
-    press(18);
+    press(32);
+    press(33);
     loop();
     expect("PRESS child=1 rank=1 elapsed_ms=100\nPRESS child=2 rank=2 elapsed_ms=100\n");
-    release(22);
-    release(18);
+    release(32);
+    release(33);
     tick(startedAt + 200);
     command('m');  // 改行なしで即実行し、LED・着順を消去する。
     expect("MODE mode=first_only\nRESET\n");
-    assert(levels[23] == LOW && levels[16] == LOW);
+    assert(awLevels[0] == LOW && awLevels[1] == LOW);
     const auto firstOnly = buzzer_inputs::poll();
     assert(firstOnly.mode == Mode::FirstOnly && firstOnly.ranking.count == 0);
     assert(!firstOnly.modeChanged && !firstOnly.resetNeeded);
@@ -40,17 +41,17 @@ int main() {
     expect("ERROR no_answerer\nERROR no_answerer\n");
 
     testNow = startedAt + 250;
-    press(18);
+    press(33);
     loop();
     expect("PRESS child=2 rank=1 elapsed_ms=50\n");
-    release(18);
+    release(33);
     command('r');
     expect("RESET\n");
     assert(buzzer_inputs::poll().mode == Mode::FirstOnly);
-    press(22);
+    press(32);
     loop();
     expect("PRESS child=1 rank=1 elapsed_ms=0\n");
-    release(22);
+    release(32);
     command('o');
     expect("JUDGE result=correct child=1\nRESET\n");
     assert(buzzer_inputs::poll().mode == Mode::FirstOnly);
@@ -60,21 +61,21 @@ int main() {
     expect("MODE mode=endless_chance\nRESET\n");
     assert(buzzer_inputs::poll().mode == Mode::EndlessChance);
     testNow = startedAt + 375;
-    press(22);
-    press(18);
+    press(32);
+    press(33);
     loop();
     expect("PRESS child=1 rank=1 elapsed_ms=75\nPRESS child=2 rank=2 elapsed_ms=75\n");
-    release(22);
-    release(18);
+    release(32);
+    release(33);
     command('x');
     expect("JUDGE result=wrong child=1 next_child=2\n");
     assert(wrongTransition);
     tick(startedAt + 400);
     command('m');  // 繰り上がり待機も解除する。
     expect("MODE mode=first_only\nRESET\n");
-    assert(!wrongTransition && levels[23] == LOW && levels[16] == LOW);
+    assert(!wrongTransition && awLevels[0] == LOW && awLevels[1] == LOW);
     tick(startedAt + 1500);
-    assert(levels[23] == LOW && levels[16] == LOW);
+    assert(awLevels[0] == LOW && awLevels[1] == LOW);
 
     // 連続コマンドは1文字ずつ順番に処理し、CR・LFは無視する。
     Serial.input = {'m', 'm', '\r', '\n'};
@@ -90,7 +91,7 @@ int main() {
     assert(buzzer_inputs::poll().mode == Mode::FirstOnly);
 
     // 物理リセットと同時のmも切替・リセットを1回行う。
-    press(15);
+    press(27);
     testNow = startedAt + 1520;
     command('m');
     expect("MODE mode=endless_chance\nRESET\n");
