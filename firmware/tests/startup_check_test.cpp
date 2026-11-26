@@ -24,7 +24,7 @@ int main() {
     assert(checkedLeds == 2 && testNow == 400);
     assert(awLevels[0] == LOW && awLevels[1] == LOW);
     assert(interrupts[32] && interrupts[33] && interrupts[27]);
-    assert(Serial.output == "BOOT\nMODE mode=endless_chance\nCONTINUITY child=1 connected=0\n");
+    assert(Serial.output == "BOOT\nMODE mode=endless_chance\nCONTINUITY child=1 connected=0\nCONTINUITY child=2 connected=0\n");
     Serial.output.clear();
     loop();
     assert(Serial.output.empty());

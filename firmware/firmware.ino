@@ -11,13 +11,18 @@ using buzzer_inputs::Mode;
 constexpr uint32_t BLINK_HALF_PERIOD_MS = 250;
 constexpr uint32_t WRONG_TRANSITION_MS = 1000;
 constexpr uint32_t STARTUP_LED_ON_MS = 200;
-// 子機1のRing 2専用。子機内でSleeve（GND）へ直結する。
-constexpr uint8_t CONTINUITY_PIN = 12;
+// 子機1/2のRing 2専用。各子機内でSleeve（GND）へ直結する。
+constexpr uint8_t CONTINUITY_PINS[] = {12, 14};
 constexpr uint32_t CONTINUITY_STABLE_MS = 20;
 
-bool continuityConnected = false;
-bool continuityCandidate = false;
-uint32_t continuityChangedAt = 0;
+struct ContinuityState {
+    bool connected = false;
+    bool candidate = false;
+    uint32_t changedAt = 0;
+};
+ContinuityState continuityStates[buzzer_inputs::CHILD_COUNT];
+static_assert(sizeof(CONTINUITY_PINS) / sizeof(CONTINUITY_PINS[0]) == buzzer_inputs::CHILD_COUNT,
+              "Each child needs a continuity pin");
 
 bool inputsReady = false;
 bool ledWriteError = false;
@@ -32,21 +37,25 @@ void reportMode(Mode mode) {
     Serial.printf("MODE mode=%s\n", mode == Mode::EndlessChance ? "endless_chance" : "first_only");
 }
 
-void reportContinuity() {
-    Serial.printf("CONTINUITY child=1 connected=%u\n", continuityConnected ? 1U : 0U);
+void reportContinuity(uint8_t index) {
+    Serial.printf("CONTINUITY child=%u connected=%u\n",
+                  static_cast<unsigned>(index) + 1U, continuityStates[index].connected ? 1U : 0U);
 }
 
 void pollContinuity() {
-    const bool connected = digitalRead(CONTINUITY_PIN) == LOW;
     const uint32_t now = millis();
-    if (connected != continuityCandidate) {
-        continuityCandidate = connected;
-        continuityChangedAt = now;
-    }
-    if (continuityCandidate != continuityConnected &&
-        static_cast<uint32_t>(now - continuityChangedAt) >= CONTINUITY_STABLE_MS) {
-        continuityConnected = continuityCandidate;
-        reportContinuity();
+    for (uint8_t index = 0; index < buzzer_inputs::CHILD_COUNT; ++index) {
+        auto& state = continuityStates[index];
+        const bool connected = digitalRead(CONTINUITY_PINS[index]) == LOW;
+        if (connected != state.candidate) {
+            state.candidate = connected;
+            state.changedAt = now;
+        }
+        if (state.candidate != state.connected &&
+            static_cast<uint32_t>(now - state.changedAt) >= CONTINUITY_STABLE_MS) {
+            state.connected = state.candidate;
+            reportContinuity(index);
+        }
     }
 }
 
@@ -74,11 +83,14 @@ void setup() {
     buzzer_inputs::begin();
     inputsReady = true;
     reportMode(Mode::EndlessChance);
-    pinMode(CONTINUITY_PIN, INPUT_PULLUP);
-    continuityConnected = digitalRead(CONTINUITY_PIN) == LOW;
-    continuityCandidate = continuityConnected;
-    continuityChangedAt = millis();
-    reportContinuity();
+    for (uint8_t index = 0; index < buzzer_inputs::CHILD_COUNT; ++index) {
+        pinMode(CONTINUITY_PINS[index], INPUT_PULLUP);
+        auto& state = continuityStates[index];
+        state.connected = digitalRead(CONTINUITY_PINS[index]) == LOW;
+        state.candidate = state.connected;
+        state.changedAt = millis();
+        reportContinuity(index);
+    }
 }
 
 void loop() {
