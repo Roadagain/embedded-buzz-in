@@ -115,4 +115,9 @@ void poll() {
     }
 }
 
+bool isConnected(uint8_t childIndex) {
+    return childIndex < buzzer_inputs::CHILD_COUNT && continuityStates[childIndex].known &&
+           continuityStates[childIndex].connected;
+}
+
 }  // namespace continuity_inputs

@@ -18,11 +18,12 @@ void expect(const std::string& output) {
 int main() {
     continuityInputs = 0xFE;  // 子機1のみ導通あり。
     setup();
-    expect("BOOT\nMODE mode=endless_chance\nCONTINUITY child=1 connected=1\nCONTINUITY child=2 connected=0\n");
+    expect("BOOT\nCONTINUITY child=1 connected=1\nCONTINUITY child=2 connected=0\nMODE mode=endless_chance\n");
     assert(continuityDirection == 0 && continuityLedMode == 0 && continuityInterrupts == 0);
     assert(continuityWrites == 0);
     assert(awAddress == 0x58 && awDirection == 3);
-    const uint32_t start = testNow;
+    // 初回読み取りは点灯チェックより前。子機1の点灯時間を差し引く。
+    const uint32_t start = testNow - STARTUP_LED_ON_MS;
     const unsigned reads = continuityReads;
     loop();
     tick(start + 999);
@@ -120,7 +121,7 @@ int main() {
         continuityConfigureResult = failure != 1;
         continuityDeviceResult = failure != 2;
         setup();
-        expect("BOOT\nMODE mode=endless_chance\nERROR continuity_init_failed\nCONTINUITY child=1 connected=unknown\nCONTINUITY child=2 connected=unknown\n");
+        expect("BOOT\nERROR continuity_init_failed\nCONTINUITY child=1 connected=unknown\nCONTINUITY child=2 connected=unknown\nMODE mode=endless_chance\n");
         assert(inputsReady);
         const unsigned before = continuityReads;
         testNow += 1000;

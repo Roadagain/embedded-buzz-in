@@ -34,8 +34,10 @@ void setup() {
         return;
     }
 
-    // 接続の有無によらず全ポートを順番に点灯する。入力割り込みは終了後に登録する。
-    for (uint8_t child = 0; child < 2; ++child) {
+    continuity_inputs::begin();
+    // 起動時に導通確認できた子機だけ点灯する。入力割り込みは終了後に登録する。
+    for (uint8_t child = 0; child < buzzer_inputs::CHILD_COUNT; ++child) {
+        if (!continuity_inputs::isConnected(child)) continue;
         if (!led_outputs::set(child == 0, child == 1)) {
             Serial.println("ERROR led_startup_failed");
             return;
@@ -50,7 +52,6 @@ void setup() {
     buzzer_inputs::begin();
     inputsReady = true;
     reportMode(Mode::EndlessChance);
-    continuity_inputs::begin();
 }
 
 void loop() {
