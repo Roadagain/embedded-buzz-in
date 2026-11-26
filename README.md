@@ -61,7 +61,7 @@ AW9523の初期化に失敗すると `BOOT` に続けて `ERROR led_init_failed`
 
 ### 子機1・2の導通確認（仮実装）
 
-親機のGPIO12を子機1ポート、GPIO14を子機2ポートのRing 2へ接続し、各子機内ではRing 2をSleeve（GND）へ直結します。GPIO12・GPIO14は内部プルアップ入力で、LOWなら導通あり、HIGHなら導通なしです。各子機の状態は独立して確認します。
+親機のGPIO12を子機1ポート、GPIO14を子機2ポートのRing 2へ接続し、各子機内ではRing 2をSleeve（GND）へ直結します。GPIO12・GPIO14は内部プルアップ入力で、LOWなら導通あり、HIGHなら導通なしです。各子機の状態は独立して確認します。導通確認の実装とピン設定は `firmware/continuity_inputs.cpp` にまとめています。
 
 起動時の点灯チェック終了後に現在の状態を1回出力し、その後は入力が20 ms以上安定して変化したときだけ出力します。
 
@@ -132,7 +132,7 @@ RESET
 ```sh
 for test in startup_check mode_switch mode_judgment button_release led_outputs continuity; do
   c++ -std=c++17 -Wall -Wextra -Werror -Ifirmware/tests \
-    "firmware/tests/${test}_test.cpp" firmware/buzzer_inputs.cpp firmware/serial_commands.cpp firmware/led_outputs.cpp \
+    "firmware/tests/${test}_test.cpp" firmware/buzzer_inputs.cpp firmware/serial_commands.cpp firmware/led_outputs.cpp firmware/continuity_inputs.cpp \
     -o "/tmp/embedded-buzz-in-${test}-test" && \
     "/tmp/embedded-buzz-in-${test}-test"
 done
