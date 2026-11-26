@@ -21,7 +21,7 @@ void command(char value) { Serial.input.push_back(value); loop(); }
 int main() {
     setup();
     const uint32_t startedAt = testNow;
-    expect("BOOT\nMODE mode=endless_chance\n");
+    expect("BOOT\nMODE mode=endless_chance\nCONTINUITY child=1 connected=0\n");
     testNow = startedAt + 100;
     press(32);
     press(33);

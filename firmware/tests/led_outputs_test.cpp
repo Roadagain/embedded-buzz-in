@@ -41,7 +41,7 @@ int main() {
     awWriteResult = true;
     awCalls.clear();
     setup();
-    assert(Serial.output == "BOOT\nMODE mode=endless_chance\n");
+    assert(Serial.output == "BOOT\nMODE mode=endless_chance\nCONTINUITY child=1 connected=0\n");
     Serial.output.clear();
     assert(inputsReady);
     assert(wireSda == 25 && wireScl == 26 && wireTimeout == 10);

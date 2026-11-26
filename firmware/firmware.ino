@@ -11,6 +11,13 @@ using buzzer_inputs::Mode;
 constexpr uint32_t BLINK_HALF_PERIOD_MS = 250;
 constexpr uint32_t WRONG_TRANSITION_MS = 1000;
 constexpr uint32_t STARTUP_LED_ON_MS = 200;
+// 子機1のRing 2専用。子機内でSleeve（GND）へ直結する。
+constexpr uint8_t CONTINUITY_PIN = 12;
+constexpr uint32_t CONTINUITY_STABLE_MS = 20;
+
+bool continuityConnected = false;
+bool continuityCandidate = false;
+uint32_t continuityChangedAt = 0;
 
 bool inputsReady = false;
 bool ledWriteError = false;
@@ -23,6 +30,24 @@ Child promotedChild = Child::None;
 
 void reportMode(Mode mode) {
     Serial.printf("MODE mode=%s\n", mode == Mode::EndlessChance ? "endless_chance" : "first_only");
+}
+
+void reportContinuity() {
+    Serial.printf("CONTINUITY child=1 connected=%u\n", continuityConnected ? 1U : 0U);
+}
+
+void pollContinuity() {
+    const bool connected = digitalRead(CONTINUITY_PIN) == LOW;
+    const uint32_t now = millis();
+    if (connected != continuityCandidate) {
+        continuityCandidate = connected;
+        continuityChangedAt = now;
+    }
+    if (continuityCandidate != continuityConnected &&
+        static_cast<uint32_t>(now - continuityChangedAt) >= CONTINUITY_STABLE_MS) {
+        continuityConnected = continuityCandidate;
+        reportContinuity();
+    }
 }
 
 void setup() {
@@ -49,6 +74,11 @@ void setup() {
     buzzer_inputs::begin();
     inputsReady = true;
     reportMode(Mode::EndlessChance);
+    pinMode(CONTINUITY_PIN, INPUT_PULLUP);
+    continuityConnected = digitalRead(CONTINUITY_PIN) == LOW;
+    continuityCandidate = continuityConnected;
+    continuityChangedAt = millis();
+    reportContinuity();
 }
 
 void loop() {
@@ -56,6 +86,7 @@ void loop() {
         delay(10);
         return;
     }
+    pollContinuity();
     const Command command = serial_commands::poll();
     const auto input = buzzer_inputs::poll(command);
     const auto& ranking = input.ranking;

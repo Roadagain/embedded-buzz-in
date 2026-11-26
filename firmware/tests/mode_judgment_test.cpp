@@ -27,7 +27,7 @@ void expectEmpty(Mode mode) {
 int main() {
     setup();
     const uint32_t startedAt = testNow;
-    expect("BOOT\nMODE mode=endless_chance\n");
+    expect("BOOT\nMODE mode=endless_chance\nCONTINUITY child=1 connected=0\n");
     // エンドレスチャンスの不正解では繰り上げ、経過時間の起点を維持する。
     testNow = startedAt + 100;
     press(32);

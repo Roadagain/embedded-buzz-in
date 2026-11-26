@@ -19,10 +19,10 @@ PC上のHTTP中継プログラムを使うと、Stream DeckからUSBシリアル
 | --- | --- | --- | --- |
 | Tip（先端） | GPIO32 | GPIO33 | スイッチの片端 |
 | Ring 1 | AW9523の0 | AW9523の1 | LEDのアノード（＋） |
-| Ring 2 | 未接続（将来の導通確認用） | 未接続（将来の導通確認用） | 今回は未接続 |
+| Ring 2 | GPIO12（導通確認入力） | 未接続 | 子機1のみSleeveへ直結。子機2は未接続 |
 | Sleeve（根元） | GND | GND | スイッチのもう片端・330 Ω抵抗経由でLEDのカソード（−） |
 
-330 Ω抵抗は子機側に各1本、`LEDカソード → 330 Ω → Sleeve` の順に入れます。スイッチのGNDはこの抵抗を通さずSleeveへ直結します。抵抗はLEDの電流制限用で、親機から子機内抵抗までの配線が短絡した場合の出力電流は制限しません。LEDの定格・実測電流・明るさを確認してください。従来のGPIO23/16からのLED配線は外します。導通確認の配線と処理は今回追加していません。
+330 Ω抵抗は子機側に各1本、`LEDカソード → 330 Ω → Sleeve` の順に入れます。スイッチのGNDはこの抵抗を通さずSleeveへ直結します。抵抗はLEDの電流制限用で、親機から子機内抵抗までの配線が短絡した場合の出力電流は制限しません。LEDの定格・実測電流・明るさを確認してください。従来のGPIO23/16からのLED配線は外します。子機1のみRing 2による導通確認を仮実装しています。
 
 AW9523は親機内で次のように接続します。
 
@@ -33,7 +33,7 @@ AW9523は親機内で次のように接続します。
 | GPIO25 | SDA |
 | GPIO26 | SCL |
 
-3V3・GND・GPIO25・GPIO26・GPIO32・GPIO33・GPIO27はすべてESP32-DevKitC V4の3V3側ヘッダー（J2）にあります。GNDは同じ列のIO12とIO13の間にある端子を使えます。I²Cは `Wire.begin(25, 26)` で初期化します。以前のSDA=GPIO21・SCL=GPIO19、子機ボタン=GPIO22/18、リセット=GPIO15から配線を変更した後は、更新したファームウェアを再度書き込んでください。
+3V3・GND・GPIO12・GPIO25・GPIO26・GPIO32・GPIO33・GPIO27はすべてESP32-DevKitC V4の3V3側ヘッダー（J2）にあります。GNDは同じ列のIO12とIO13の間にある端子を使えます。I²Cは `Wire.begin(25, 26)` で初期化します。以前のSDA=GPIO21・SCL=GPIO19、子機ボタン=GPIO22/18、リセット=GPIO15から配線を変更した後は、更新したファームウェアを再度書き込んでください。
 
 AW9523のA0/A1ジャンパーは開放し、アドレスは既定の `0x58` を使います。出力0/1だけを通常GPIO・プッシュプル出力にし、HIGHで点灯、LOWで消灯します。残りのAW9523ピンは入力のままです。設定は `firmware/led_outputs.cpp` を参照してください。
 
@@ -51,13 +51,26 @@ arduino-cli upload --fqbn esp32:esp32:esp32 --port PORT firmware
 
 ### 起動時の点灯チェック
 
-起動時は子機1、子機2の順にLEDを200 msずつ点灯し、全消灯してから通常の入力受付を開始します。接続状態の検知は行わず、未接続ポートも同じ時間だけ駆動するため、チェック時間は合計約400 msです。点灯時間は `firmware/firmware.ino` の `STARTUP_LED_ON_MS` で調整できます。
+起動時は子機1、子機2の順にLEDを200 msずつ点灯し、全消灯してから通常の入力受付を開始します。導通確認の結果によらず、未接続ポートも同じ時間だけ駆動するため、チェック時間は合計約400 msです。点灯時間は `firmware/firmware.ino` の `STARTUP_LED_ON_MS` で調整できます。
 
 AW9523の初期化に失敗すると `BOOT` に続けて `ERROR led_init_failed` を、点灯チェック中の書き込み失敗では `ERROR led_startup_failed` を出力し、入力受付を開始しません。配線と電源を確認して親機を再起動してください。運用中の書き込み失敗では `ERROR led_write_failed` を連続した失敗につき1回出力し、以降のloopで現在の表示状態を再送します。ボタン入力は継続します。通信断中は消灯できず表示が残る可能性があります。
 
-チェック中の子機・物理リセットボタンの押下は記録しません。押したままチェックが終了した場合は、一度離してから押し直してください。`PRESS` の経過時間はチェック終了後の入力受付開始を起点にします。シリアル出力はチェック前に `BOOT`、終了後に `MODE mode=endless_chance` を出力します。チェック中に受信したシリアルコマンドは、受信バッファに残っていれば終了後に処理します。通常のリセット・正解・不正解・モード切替では、この点灯チェックは繰り返しません。
+チェック中の子機・物理リセットボタンの押下は記録しません。押したままチェックが終了した場合は、一度離してから押し直してください。`PRESS` の経過時間はチェック終了後の入力受付開始を起点にします。シリアル出力はチェック前に `BOOT`、終了後に `MODE mode=endless_chance` と子機1の導通確認結果を出力します。チェック中に受信したシリアルコマンドは、受信バッファに残っていれば終了後に処理します。通常のリセット・正解・不正解・モード切替では、この点灯チェックは繰り返しません。
 
 実機では、電源を切って子機を接続してから起動し、子機1 → 子機2 → 全消灯の順になることを確認してください。片側のみ接続した場合も接続先の順番で点灯し、未接続ポートの分は待ち時間になります。
+
+### 子機1の導通確認（仮実装）
+
+親機のGPIO12を子機1ポートのRing 2へ接続し、子機1内ではRing 2をSleeve（GND）へ直結します。GPIO12は内部プルアップ入力で、LOWなら導通あり、HIGHなら導通なしです。子機2の導通確認は未実装です。
+
+起動時の点灯チェック終了後に現在の状態を1回出力し、その後は入力が20 ms以上安定して変化したときだけ出力します。
+
+```text
+CONTINUITY child=1 connected=1
+CONTINUITY child=1 connected=0
+```
+
+`connected=1` は導通あり、`connected=0` は導通なしです。確認対象はRing 2とSleeveの往復経路のみで、Tip・Ring 1やボタン・LEDの故障までは検出しません。仮実装では結果をシリアルへ出力するだけで、押下受付・着順・LED表示には影響しません。確認は電源を切って配線を変更し、再起動して行ってください。
 
 ### 入力受付モード
 
@@ -77,6 +90,7 @@ Arduino IDEのシリアルモニターを115200 bpsで開きます。起動時�
 ```text
 BOOT
 MODE mode=endless_chance
+CONTINUITY child=1 connected=1
 PRESS child=1 rank=1 elapsed_ms=120
 PRESS child=2 rank=2 elapsed_ms=145
 RESET
@@ -99,7 +113,7 @@ RESET
 
 1着のみモードの `x` は `JUDGE result=wrong child=子機番号 next_child=0`、`RESET` の順に出力し、全リセットします。
 
-モードの出力値は `endless_chance`（エンドレスチャンス）と `first_only`（1着のみ）です。起動時は `BOOT` に続いて `MODE mode=endless_chance` を出力します。`m` で切り替えると、次のように出力します。
+モードの出力値は `endless_chance`（エンドレスチャンス）と `first_only`（1着のみ）です。起動時は `BOOT` に続いて `MODE mode=endless_chance` と子機1の導通確認結果を出力します。`m` で切り替えると、次のように出力します。
 
 ```text
 MODE mode=first_only
@@ -112,10 +126,10 @@ RESET
 
 ### ファームウェアの自動テスト
 
-リポジトリのルートで、C++17対応のコンパイラを使って実行します。GPIO・I²Cドライバ・時刻・シリアルを模擬し、起動時の点灯順序・入力受付開始、モード切替、リセット、両モードのLED・正誤判定、子機ボタンの解放確認、AW9523の初期化失敗・書き込み失敗と再送を確認します。ESP32実機は使用しません。
+リポジトリのルートで、C++17対応のコンパイラを使って実行します。GPIO・I²Cドライバ・時刻・シリアルを模擬し、起動時の点灯順序・入力受付開始、モード切替、リセット、両モードのLED・正誤判定、子機ボタンの解放確認、AW9523の初期化失敗・書き込み失敗と再送、子機1の導通確認とチャタリング除去を確認します。ESP32実機は使用しません。
 
 ```sh
-for test in startup_check mode_switch mode_judgment button_release led_outputs; do
+for test in startup_check mode_switch mode_judgment button_release led_outputs continuity; do
   c++ -std=c++17 -Wall -Wextra -Werror -Ifirmware/tests \
     "firmware/tests/${test}_test.cpp" firmware/buzzer_inputs.cpp firmware/serial_commands.cpp firmware/led_outputs.cpp \
     -o "/tmp/embedded-buzz-in-${test}-test" && \
