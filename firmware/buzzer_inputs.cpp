@@ -113,9 +113,10 @@ private:
     uint32_t fellAt_ = 0;
 };
 
-Button childOne(22, Child::One);
-Button childTwo(18, Child::Two);
-ResetButton resetButton(15);
+// AW9523のI²C（GPIO25/26）とともに3V3側のヘッダーへまとめる。
+Button childOne(32, Child::One);
+Button childTwo(33, Child::Two);
+ResetButton resetButton(27);
 
 }  // 無名名前空間
 
