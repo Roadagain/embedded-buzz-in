@@ -13,8 +13,8 @@ namespace {
 constexpr uint8_t ADDRESS = 0x59;
 // P0_0/P0_1は0x59での電源投入・リセット時にHi-Z。外付けプルアップが必要。
 constexpr uint8_t CONTINUITY_PINS[] = {0, 1};
-constexpr uint32_t POLL_INTERVAL_MS = 1000;
-constexpr uint32_t CONTINUITY_STABLE_MS = 20;
+constexpr uint32_t POLL_INTERVAL_MS = 100;
+constexpr uint32_t CONTINUITY_STABLE_MS = 100;
 
 struct ContinuityState {
     bool known = false;

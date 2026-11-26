@@ -6,7 +6,7 @@
 #include "../firmware.ino"
 
 void tick(uint32_t now) { testNow = now; loop(); }
-void sample() { tick(testNow + 1000); }
+void sample() { tick(testNow + 100); }
 void expect(const std::string& output) {
     if (Serial.output != output) {
         std::cerr << "Expected:\n" << output << "Actual:\n" << Serial.output;
@@ -22,13 +22,14 @@ int main() {
     assert(continuityDirection == 0 && continuityLedMode == 0 && continuityInterrupts == 0);
     assert(continuityWrites == 0);
     assert(awAddress == 0x58 && awDirection == 3);
-    // 初回読み取りは点灯チェックより前。子機1の点灯時間を差し引く。
-    const uint32_t start = testNow - STARTUP_LED_ON_MS;
-    const unsigned reads = continuityReads;
+    // 点灯チェック中にも100 msが経過するため、最初のloopで読み取りを行う。
     loop();
-    tick(start + 999);
-    assert(continuityReads == reads);  // 1000 ms未満では読み取らない。
-    tick(start + 1000);
+    expect("");
+    const uint32_t start = testNow;
+    const unsigned reads = continuityReads;
+    tick(start + 99);
+    assert(continuityReads == reads);  // 100 ms未満では読み取らない。
+    tick(start + 100);
     assert(continuityReads == reads + 1);
     expect("");
 
@@ -49,7 +50,7 @@ int main() {
     sample();
     expect("");
     const unsigned beforeConfirm = continuityReads;
-    tick(testNow + 999);
+    tick(testNow + 99);
     assert(continuityReads == beforeConfirm);
     expect("");
     tick(testNow + 1);
@@ -87,14 +88,14 @@ int main() {
     sample();
     expect("CONTINUITY child=1 connected=1\nCONTINUITY child=2 connected=1\n");
 
-    // millis()周回をまたいでも1000 ms周期と状態確定を維持する。
+    // millis()周回をまたいでも100 ms周期と状態確定を維持する。
     continuityInputs = 0xFF;
-    tick(UINT32_MAX - 499);
+    tick(UINT32_MAX - 49);
     const unsigned beforeWrap = continuityReads;
-    tick(499);
+    tick(49);
     assert(continuityReads == beforeWrap);
     expect("");
-    tick(500);
+    tick(50);
     assert(continuityReads == beforeWrap + 1);
     expect("CONTINUITY child=1 connected=0\nCONTINUITY child=2 connected=0\n");
 
@@ -124,7 +125,7 @@ int main() {
         expect("BOOT\nERROR continuity_init_failed\nCONTINUITY child=1 connected=unknown\nCONTINUITY child=2 connected=unknown\nMODE mode=endless_chance\n");
         assert(inputsReady);
         const unsigned before = continuityReads;
-        testNow += 1000;
+        testNow += 100;
         continuity_inputs::poll();
         assert(continuityReads == before);
     }
@@ -134,10 +135,10 @@ int main() {
     continuity_inputs::begin();
     expect("ERROR continuity_read_failed\nCONTINUITY child=1 connected=unknown\nCONTINUITY child=2 connected=unknown\n");
     continuityReadResult = true;
-    testNow += 1000;
+    testNow += 100;
     continuity_inputs::poll();
     expect("");
-    testNow += 1000;
+    testNow += 100;
     continuity_inputs::poll();
     expect("CONTINUITY child=1 connected=0\nCONTINUITY child=2 connected=0\n");
     assert(continuityWrites == 0);
