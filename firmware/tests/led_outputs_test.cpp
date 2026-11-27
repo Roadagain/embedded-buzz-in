@@ -2,7 +2,6 @@
 #include <cassert>
 #include <iostream>
 
-#include "Adafruit_AW9523.h"
 #include "Adafruit_I2CDevice.h"
 #include "../firmware.ino"
 

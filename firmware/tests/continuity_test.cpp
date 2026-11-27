@@ -1,7 +1,6 @@
 #include <cassert>
 #include <iostream>
 
-#include "Adafruit_AW9523.h"
 #include "Adafruit_I2CDevice.h"
 #include "../firmware.ino"
 
@@ -19,8 +18,11 @@ int main() {
     continuityInputs = 0xFE;  // 子機1のみ導通あり。
     setup();
     expect("BOOT\nCONTINUITY child=1 connected=1\nCONTINUITY child=2 connected=0\nMODE mode=endless_chance\n");
-    assert(continuityDirection == 0 && continuityLedMode == 0 && continuityInterrupts == 0);
-    assert(continuityWrites == 0);
+    assert(continuityRegisters[0x00] == 0x7F && continuityRegisters[0x01] == 0x7F);
+    assert(continuityRegisters[0x0C] == 3 && continuityRegisters[0x0D] == 0);
+    assert(continuityRegisters[0x02] == 0 && continuityRegisters[0x03] == 0);
+    assert(continuityRegisters[0x04] == 0 && continuityRegisters[0x05] == 0);
+    assert(continuityRegisters[0x14] == 0 && continuityRegisters[0x15] == 0);
     assert(mcpAddress == 0x20 && mcpRegisters[0x00] == 0x7C);
     // 点灯チェック中にも100 msが経過するため、最初のloopで読み取りを行う。
     loop();
@@ -117,10 +119,9 @@ int main() {
     continuityReadResult = true;
 
     // 初期化失敗は状態不明。入力受付は維持し、読み取りはしない。
-    for (int failure = 0; failure < 3; ++failure) {
-        continuityBeginResult = failure != 0;
-        continuityConfigureResult = failure != 1;
-        continuityDeviceResult = failure != 2;
+    for (int failure : {-1, 0x05, 0x0A, 0x04, 0x14, 0x15, 0x00, 0x01, 0x02, 0x03, 0x0C, 0x0D}) {
+        continuityBeginResult = failure != -1;
+        continuityFailRegister = failure;
         setup();
         expect("BOOT\nERROR continuity_init_failed\nCONTINUITY child=1 connected=unknown\nCONTINUITY child=2 connected=unknown\nMODE mode=endless_chance\n");
         assert(inputsReady);
@@ -129,7 +130,8 @@ int main() {
         continuity_inputs::poll();
         assert(continuityReads == before);
     }
-    continuityBeginResult = continuityConfigureResult = continuityDeviceResult = true;
+    continuityBeginResult = true;
+    continuityFailRegister = -1;
     // 起動時の初回読み取り失敗からも復旧できる。
     continuityReadResult = false;
     continuity_inputs::begin();
@@ -141,6 +143,25 @@ int main() {
     testNow += 100;
     continuity_inputs::poll();
     expect("CONTINUITY child=1 connected=0\nCONTINUITY child=2 connected=0\n");
-    assert(continuityWrites == 0);
+    // 通常のポーリングでは設定・出力を書き換えない。
+    const unsigned writes = continuityWrites;
+    sample();
+    assert(continuityWrites == writes);
+    expect("");
+
+    // ESP32だけの再起動時は以前のBANK・極性・方向設定を引き継がない。
+    for (uint8_t config : {0x00, 0xA0}) {
+        continuityRegisters.fill(0xFF);
+        continuityRegisters[0x0A] = config;
+        continuity_inputs::begin();
+        expect("CONTINUITY child=1 connected=0\nCONTINUITY child=2 connected=0\n");
+        assert(continuityRegisters[0x0A] == 0);
+        assert(continuityRegisters[0x00] == 0x7F && continuityRegisters[0x01] == 0x7F);
+        assert(continuityRegisters[0x02] == 0 && continuityRegisters[0x03] == 0);
+        assert(continuityRegisters[0x0C] == 3 && continuityRegisters[0x0D] == 0);
+        assert(continuityRegisters[0x14] == 0 && continuityRegisters[0x15] == 0);
+        // LED用ICの設定は独立している。
+        assert(mcpRegisters[0x00] == 0x7C && mcpRegisters[0x0C] == 0);
+    }
     std::cout << "Continuity integration tests passed\n";
 }
