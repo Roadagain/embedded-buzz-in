@@ -21,7 +21,7 @@ int main() {
     expect("BOOT\nCONTINUITY child=1 connected=1\nCONTINUITY child=2 connected=0\nMODE mode=endless_chance\n");
     assert(continuityDirection == 0 && continuityLedMode == 0 && continuityInterrupts == 0);
     assert(continuityWrites == 0);
-    assert(awAddress == 0x58 && awDirection == 3);
+    assert(mcpAddress == 0x20 && mcpRegisters[0x00] == 0x7C);
     // 点灯チェック中にも100 msが経過するため、最初のloopで読み取りを行う。
     loop();
     expect("");
@@ -104,7 +104,7 @@ int main() {
     setInputLevel(33, LOW);
     loop();
     assert(buzzer_inputs::poll().ranking.count == 2);
-    assert(awLevels[0] == HIGH && awLevels[1] == HIGH);
+    assert(mcpLevels[0] == HIGH && mcpLevels[1] == HIGH);
     assert(Serial.output.find("CONTINUITY") == std::string::npos);
     Serial.output.clear();
 
@@ -113,7 +113,7 @@ int main() {
     sample();
     expect("ERROR continuity_read_failed\nCONTINUITY child=1 connected=unknown\nCONTINUITY child=2 connected=unknown\n");
     assert(buzzer_inputs::poll().ranking.count == 2);
-    assert(awLevels[0] == HIGH && awLevels[1] == HIGH);
+    assert(mcpLevels[0] == HIGH && mcpLevels[1] == HIGH);
     continuityReadResult = true;
 
     // 初期化失敗は状態不明。入力受付は維持し、読み取りはしない。

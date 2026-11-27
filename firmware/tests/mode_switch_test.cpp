@@ -1,7 +1,7 @@
 #include <cassert>
 #include <iostream>
 
-#include "Adafruit_AW9523.h"
+#include "Adafruit_I2CDevice.h"
 #include "../firmware.ino"
 
 void expect(const std::string& output) {
@@ -32,7 +32,7 @@ int main() {
     tick(startedAt + 200);
     command('m');  // 改行なしで即実行し、LED・着順を消去する。
     expect("MODE mode=first_only\nRESET\n");
-    assert(awLevels[0] == LOW && awLevels[1] == LOW);
+    assert(mcpLevels[0] == LOW && mcpLevels[1] == LOW);
     const auto firstOnly = buzzer_inputs::poll();
     assert(firstOnly.mode == Mode::FirstOnly && firstOnly.ranking.count == 0);
     assert(!firstOnly.modeChanged && !firstOnly.resetNeeded);
@@ -73,9 +73,9 @@ int main() {
     tick(startedAt + 400);
     command('m');  // 繰り上がり待機も解除する。
     expect("MODE mode=first_only\nRESET\n");
-    assert(!wrongTransition && awLevels[0] == LOW && awLevels[1] == LOW);
+    assert(!wrongTransition && mcpLevels[0] == LOW && mcpLevels[1] == LOW);
     tick(startedAt + 1500);
-    assert(awLevels[0] == LOW && awLevels[1] == LOW);
+    assert(mcpLevels[0] == LOW && mcpLevels[1] == LOW);
 
     // 連続コマンドは1文字ずつ順番に処理し、CR・LFは無視する。
     Serial.input = {'m', 'm', '\r', '\n'};

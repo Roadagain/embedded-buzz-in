@@ -1,7 +1,7 @@
 #include <cassert>
 #include <iostream>
 
-#include "Adafruit_AW9523.h"
+#include "Adafruit_I2CDevice.h"
 #include "../firmware.ino"
 
 void expect(const std::string& output) {
@@ -20,7 +20,7 @@ void command(char value) { Serial.input.push_back(value); loop(); }
 void expectEmpty(Mode mode) {
     const auto input = buzzer_inputs::poll();
     assert(input.ranking.count == 0 && input.mode == mode);
-    assert(awLevels[0] == LOW && awLevels[1] == LOW);
+    assert(mcpLevels[0] == LOW && mcpLevels[1] == LOW);
     assert(!wrongTransition);
 }
 
@@ -34,24 +34,24 @@ int main() {
     press(33);
     loop();
     expect("PRESS child=1 rank=1 elapsed_ms=100\nPRESS child=2 rank=2 elapsed_ms=100\n");
-    assert(awLevels[0] == HIGH && awLevels[1] == HIGH);
+    assert(mcpLevels[0] == HIGH && mcpLevels[1] == HIGH);
     release(32);
     release(33);
     tick(startedAt + 350);
-    assert(awLevels[0] == LOW && awLevels[1] == HIGH);
+    assert(mcpLevels[0] == LOW && mcpLevels[1] == HIGH);
     command('x');
     expect("JUDGE result=wrong child=1 next_child=2\n");
-    assert(awLevels[0] == LOW && awLevels[1] == HIGH);
+    assert(mcpLevels[0] == LOW && mcpLevels[1] == HIGH);
     testNow = startedAt + 400;
     press(32);
     loop();
     expect("PRESS child=1 rank=2 elapsed_ms=400\n");
     release(32);
-    assert(awLevels[0] == LOW && awLevels[1] == HIGH);
+    assert(mcpLevels[0] == LOW && mcpLevels[1] == HIGH);
     tick(startedAt + 1350);
-    assert(awLevels[0] == HIGH && awLevels[1] == HIGH);
+    assert(mcpLevels[0] == HIGH && mcpLevels[1] == HIGH);
     tick(startedAt + 1600);
-    assert(awLevels[0] == HIGH && awLevels[1] == LOW);
+    assert(mcpLevels[0] == HIGH && mcpLevels[1] == LOW);
     command('o');
     expect("JUDGE result=correct child=2\nRESET\n");
     expectEmpty(Mode::EndlessChance);
@@ -72,11 +72,11 @@ int main() {
         loop();
         expect("PRESS child=" + first + " rank=1 elapsed_ms=100\nPRESS child=" + second +
                " rank=2 elapsed_ms=100\n");
-        assert(awLevels[firstLed] == HIGH && awLevels[secondLed] == LOW);
+        assert(mcpLevels[firstLed] == HIGH && mcpLevels[secondLed] == LOW);
         release(firstPin);
         release(secondPin);
         tick(testNow + 250);
-        assert(awLevels[firstLed] == LOW && awLevels[secondLed] == LOW);
+        assert(mcpLevels[firstLed] == LOW && mcpLevels[secondLed] == LOW);
         command('x');
         expect("JUDGE result=wrong child=" + first + " next_child=0\nRESET\n");
         expectEmpty(Mode::FirstOnly);
@@ -88,7 +88,7 @@ int main() {
         loop();
         expect("PRESS child=" + second + " rank=1 elapsed_ms=50\n");
         release(secondPin);
-        assert(awLevels[secondLed] == HIGH && awLevels[firstLed] == LOW);
+        assert(mcpLevels[secondLed] == HIGH && mcpLevels[firstLed] == LOW);
         command('o');
         expect("JUDGE result=correct child=" + second + "\nRESET\n");
         expectEmpty(Mode::FirstOnly);
