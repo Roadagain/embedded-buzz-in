@@ -113,7 +113,7 @@ private:
     uint32_t fellAt_ = 0;
 };
 
-// AW9523のI²C（GPIO25/26）とともに3V3側のヘッダーへまとめる。
+// MCP23017のI²C（GPIO25/26）とともに3V3側のヘッダーへまとめる。
 Button childOne(32, Child::One);
 Button childTwo(33, Child::Two);
 ResetButton resetButton(27);

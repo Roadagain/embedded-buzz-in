@@ -2,7 +2,6 @@
 #include <iostream>
 #include <vector>
 
-#include "Adafruit_AW9523.h"
 #include "Adafruit_I2CDevice.h"
 #include "../firmware.ino"
 
@@ -14,8 +13,8 @@ void checkDelay(uint32_t duration) {
     assert(duration == 200);
     assert(testNow == checkedLeds * 200);
     assert(checkedLeds < expectedLeds.size());
-    assert(awLevels[0] == (expectedLeds[checkedLeds] == 0 ? HIGH : LOW));
-    assert(awLevels[1] == (expectedLeds[checkedLeds] == 1 ? HIGH : LOW));
+    assert(mcpLevels[0] == (expectedLeds[checkedLeds] == 0 ? HIGH : LOW));
+    assert(mcpLevels[1] == (expectedLeds[checkedLeds] == 1 ? HIGH : LOW));
     // チェック中は入力を着順やリセットとして受け付けない。
     assert(!interrupts[32] && !interrupts[33] && !interrupts[27]);
     assert(Serial.output == startupOutput);
@@ -28,7 +27,7 @@ void checkStartup(uint8_t inputs, bool initOk = true, bool readOk = true) {
     levels.fill(HIGH);
     for (auto& callback : interrupts) callback = nullptr;
     Serial.output.clear();
-    awCalls.clear();
+    mcpCalls.clear();
     checkedLeds = 0;
     expectedLeds.clear();
     continuityInputs = inputs;
@@ -50,14 +49,14 @@ void checkStartup(uint8_t inputs, bool initOk = true, bool readOk = true) {
     setup();
     onTestDelay = nullptr;
     assert(checkedLeds == expectedLeds.size() && testNow == checkedLeds * 200);
-    assert(awLevels[0] == LOW && awLevels[1] == LOW);
+    assert(mcpLevels[0] == LOW && mcpLevels[1] == LOW);
     assert(interrupts[32] && interrupts[33] && interrupts[27]);
     assert(inputsReady);
     assert(Serial.output == startupOutput + "MODE mode=endless_chance\n");
     if (expectedLeds.empty()) {
         // 初期化時の全消灯以外に出力を書き込まない。
-        for (const auto& call : awCalls) {
-            assert(call != "output=1" && call != "output=2" && call != "output=3");
+        for (const auto& call : mcpCalls) {
+            assert(call != "register=20 value=1" && call != "register=20 value=2" && call != "register=20 value=3");
         }
     }
     assert(!continuity_inputs::isConnected(2) && !continuity_inputs::isConnected(255));
@@ -79,6 +78,6 @@ int main() {
     setInputLevel(33, LOW);
     loop();
     assert(Serial.output == "PRESS child=2 rank=1 elapsed_ms=75\n");
-    assert(awLevels[0] == LOW && awLevels[1] == HIGH);
+    assert(mcpLevels[0] == LOW && mcpLevels[1] == HIGH);
     std::cout << "Startup check integration tests passed\n";
 }

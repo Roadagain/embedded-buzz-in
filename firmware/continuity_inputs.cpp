@@ -1,7 +1,6 @@
 #include "continuity_inputs.h"
 
 #include <Arduino.h>
-#include <Adafruit_AW9523.h>
 #include <Adafruit_I2CDevice.h>
 #include <Wire.h>
 
@@ -10,8 +9,8 @@
 namespace continuity_inputs {
 namespace {
 
-constexpr uint8_t ADDRESS = 0x59;
-// P0_0/P0_1は0x59での電源投入・リセット時にHi-Z。外付けプルアップが必要。
+constexpr uint8_t ADDRESS = 0x21;
+// GPA0/GPA1を内部プルアップ付き入力にする。GPA7/GPB7は出力専用なので使わない。
 constexpr uint8_t CONTINUITY_PINS[] = {0, 1};
 constexpr uint32_t POLL_INTERVAL_MS = 100;
 constexpr uint32_t CONTINUITY_STABLE_MS = 100;
@@ -26,7 +25,20 @@ struct ContinuityState {
 ContinuityState continuityStates[buzzer_inputs::CHILD_COUNT];
 static_assert(sizeof(CONTINUITY_PINS) / sizeof(CONTINUITY_PINS[0]) == buzzer_inputs::CHILD_COUNT,
               "Each child needs a continuity pin");
-Adafruit_AW9523 driver;
+// MCP23017、BANK=0のレジスタ。
+constexpr uint8_t IODIRA = 0x00;
+constexpr uint8_t IODIRB = 0x01;
+constexpr uint8_t IPOLA = 0x02;
+constexpr uint8_t IPOLB = 0x03;
+constexpr uint8_t GPINTENA = 0x04;
+constexpr uint8_t GPINTENB = 0x05;
+constexpr uint8_t IOCON = 0x0A;
+constexpr uint8_t GPPUA = 0x0C;
+constexpr uint8_t GPPUB = 0x0D;
+constexpr uint8_t GPIOA = 0x12;
+constexpr uint8_t OLATA = 0x14;
+constexpr uint8_t OLATB = 0x15;
+constexpr uint8_t INPUT_PULLUPS = (1U << CONTINUITY_PINS[0]) | (1U << CONTINUITY_PINS[1]);
 Adafruit_I2CDevice device(ADDRESS, &Wire);
 bool initialized = false;
 bool readError = false;
@@ -38,9 +50,14 @@ void reportContinuity(uint8_t index) {
                   !state.known ? "unknown" : state.connected ? "1" : "0");
 }
 
+bool writeRegister(uint8_t reg, uint8_t value) {
+    const uint8_t data[] = {reg, value};
+    return device.write(data, sizeof(data));
+}
+
 bool readInputs(uint8_t& inputs) {
-    // inputGPIO()は通信エラーを返さないため、成功可否が分かる転送APIを使う。
-    const uint8_t reg = AW9523_REG_INPUT0;
+    // 転送失敗をLOW（導通あり）と誤判定しない。
+    const uint8_t reg = GPIOA;
     return device.write_then_read(&reg, 1, &inputs, 1);
 }
 
@@ -63,9 +80,15 @@ void begin() {
     readError = false;
     for (auto& state : continuityStates) state = ContinuityState{};
     // WireはLED側で初期化済み。同じバスを使用する。
-    // begin()内の設定の戻り値はライブラリで無視されるため、必要な設定を再確認する。
-    if (!driver.begin(ADDRESS, &Wire) || !driver.configureDirection(0) ||
-        !driver.configureLEDMode(0) || !driver.interruptEnableGPIO(0) || !device.begin()) {
+    // 0x05はBANK=1ならIOCON、BANK=0ならGPINTENB。ESP32だけの再起動にも対応する。
+    // ラッチをLOWにしてから方向を設定し、検知線をHIGH出力にしない。
+    // 出力専用のGPA7/GPB7はLOW出力にし、未接続にしておく。
+    if (!device.begin() || !writeRegister(0x05, 0) || !writeRegister(IOCON, 0) ||
+        !writeRegister(GPINTENA, 0) || !writeRegister(GPINTENB, 0) ||
+        !writeRegister(OLATA, 0) || !writeRegister(OLATB, 0) ||
+        !writeRegister(IODIRA, 0x7F) || !writeRegister(IODIRB, 0x7F) ||
+        !writeRegister(IPOLA, 0) || !writeRegister(IPOLB, 0) ||
+        !writeRegister(GPPUA, INPUT_PULLUPS) || !writeRegister(GPPUB, 0)) {
         Serial.println("ERROR continuity_init_failed");
         for (uint8_t index = 0; index < buzzer_inputs::CHILD_COUNT; ++index) reportContinuity(index);
         return;
